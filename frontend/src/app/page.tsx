@@ -18,6 +18,8 @@ const DEFAULT_PROPOSAL: DataCentreProposal = {
   renewable_ppa: false,
 };
 
+const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
+
 export default function Home() {
   const [proposal, setProposal] = useState<DataCentreProposal>(DEFAULT_PROPOSAL);
   const [assessment, setAssessment] = useState<ImpactAssessment | null>(null);
@@ -25,12 +27,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const scoreTone = useMemo(() => {
-    const score = assessment?.overall_score.composite_rag ?? "amber";
-    if (score === "green") return "text-emerald-700 bg-emerald-100";
-    if (score === "red") return "text-rose-700 bg-rose-100";
-    return "text-amber-700 bg-amber-100";
-  }, [assessment?.overall_score.composite_rag]);
+  const activeStep = useMemo(() => {
+    if (!progress && !assessment) return 1;
+    if (progress && progress.pct < 35) return 1;
+    if ((progress && progress.pct < 55) || (!progress && assessment)) return 2;
+    if (progress && progress.pct < 85) return 3;
+    if (assessment) return 4;
+    return 1;
+  }, [assessment, progress]);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -74,6 +78,9 @@ export default function Home() {
             throw new Error(evt.error ?? "Assessment failed");
           }
           setProgress(evt);
+          if (evt.stage === "error") {
+            throw new Error(typeof evt.error === "string" ? evt.error : JSON.stringify(evt.error));
+          }
           if (evt.stage === "complete" && evt.result) {
             setAssessment(evt.result);
           }
@@ -87,159 +94,269 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen px-4 py-10 sm:px-8 lg:px-12">
-      <div className="mx-auto grid w-full max-w-7xl gap-8 lg:grid-cols-[1.1fr_1fr]">
-        <section className="rounded-2xl border border-black/10 bg-white/85 p-6 shadow-lg backdrop-blur sm:p-8">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">GenAI Genesis 2026</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-            DataSite Impact Analyzer
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            Evaluate data centre proposals using Canadian grid, community, and environmental context with deterministic scoring + ML strain prediction.
+    <main className="min-h-screen px-4 py-8 md:px-8 md:py-10">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <header className="hero-panel rounded-3xl p-6 md:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-900/80">City Decision Support</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">DataSite Impact Analyzer</h1>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
+            Understand what a data centre proposal means for local power, water, tax impact, and community risk before approval.
           </p>
+        </header>
 
-          <form onSubmit={onSubmit} className="mt-8 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Address</label>
-              <input
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none ring-emerald-400 focus:ring"
-                value={proposal.address}
-                onChange={(e) => setProposal((p) => ({ ...p, address: e.target.value }))}
-              />
-            </div>
+        <Stepper activeStep={activeStep} />
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Province">
-                <select
-                  className="field"
-                  value={proposal.province}
-                  onChange={(e) => setProposal((p) => ({ ...p, province: e.target.value as DataCentreProposal["province"] }))}
-                >
-                  {["ON", "AB", "BC", "QC", "MB", "SK", "NS", "NB", "NL", "PE"].map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="IT Load (MW)">
+        <section className="grid gap-6 lg:grid-cols-[1.05fr_1fr]">
+          <Card title="1. Proposal Intake" subtitle="Enter project details used by the impact model.">
+            <form onSubmit={onSubmit} className="space-y-4">
+              <Field label="Project Address">
                 <input
-                  type="number"
                   className="field"
-                  value={proposal.it_load_mw}
-                  onChange={(e) => setProposal((p) => ({ ...p, it_load_mw: Number(e.target.value) }))}
+                  value={proposal.address}
+                  onChange={(e) => setProposal((p) => ({ ...p, address: e.target.value }))}
+                  placeholder="e.g., Grande Prairie, Alberta"
                 />
               </Field>
-            </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="PUE">
-                <input
-                  type="number"
-                  step="0.01"
-                  className="field"
-                  value={proposal.pue}
-                  onChange={(e) => setProposal((p) => ({ ...p, pue: Number(e.target.value) }))}
-                />
-              </Field>
-              <Field label="WUE">
-                <input
-                  type="number"
-                  step="0.01"
-                  className="field"
-                  value={proposal.wue}
-                  onChange={(e) => setProposal((p) => ({ ...p, wue: Number(e.target.value) }))}
-                />
-              </Field>
-              <Field label="CAPEX (CAD M)">
-                <input
-                  type="number"
-                  className="field"
-                  value={proposal.capex_cad}
-                  onChange={(e) => setProposal((p) => ({ ...p, capex_cad: Number(e.target.value) }))}
-                />
-              </Field>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Cooling">
-                <select
-                  className="field"
-                  value={proposal.cooling_type}
-                  onChange={(e) => setProposal((p) => ({ ...p, cooling_type: e.target.value as DataCentreProposal["cooling_type"] }))}
-                >
-                  <option value="air">air</option>
-                  <option value="evaporative">evaporative</option>
-                  <option value="liquid_immersion">liquid_immersion</option>
-                  <option value="hybrid">hybrid</option>
-                </select>
-              </Field>
-              <Field label="Facility">
-                <select
-                  className="field"
-                  value={proposal.facility_type}
-                  onChange={(e) => setProposal((p) => ({ ...p, facility_type: e.target.value as DataCentreProposal["facility_type"] }))}
-                >
-                  <option value="hyperscale">hyperscale</option>
-                  <option value="enterprise">enterprise</option>
-                  <option value="colocation">colocation</option>
-                </select>
-              </Field>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-400"
-            >
-              {loading ? "Assessing..." : "Run Assessment"}
-            </button>
-          </form>
-
-          {progress && (
-            <div className="mt-6 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">
-              <p className="font-medium">Progress: {progress.stage}</p>
-              <p>{progress.pct}%</p>
-            </div>
-          )}
-
-          {error && <div className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}
-        </section>
-
-        <section className="rounded-2xl border border-black/10 bg-white/90 p-6 shadow-lg sm:p-8">
-          <h2 className="text-xl font-semibold text-slate-900">Assessment</h2>
-          {!assessment && <p className="mt-3 text-sm text-slate-600">Run a proposal to view environmental, economic, and sociological outputs.</p>}
-
-          {assessment && (
-            <div className="mt-4 space-y-4 text-sm text-slate-700">
-              <div className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase ${scoreTone}`}>
-                Composite: {assessment.overall_score.composite_rag}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Province">
+                  <select
+                    className="field"
+                    value={proposal.province}
+                    onChange={(e) => setProposal((p) => ({ ...p, province: e.target.value as DataCentreProposal["province"] }))}
+                  >
+                    {["ON", "AB", "BC", "QC", "MB", "SK", "NS", "NB", "NL", "PE"].map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="IT Load (MW)">
+                  <input
+                    type="number"
+                    className="field"
+                    value={proposal.it_load_mw}
+                    onChange={(e) => setProposal((p) => ({ ...p, it_load_mw: Number(e.target.value) }))}
+                  />
+                </Field>
               </div>
-              <p>{assessment.overall_score.summary_sentence}</p>
 
-              <Card title="Environmental">
-                <Line label="Annual Carbon" value={`${assessment.environmental.annual_carbon_tonnes.toLocaleString()} tCO2e`} />
-                <Line label="Water / day" value={`${assessment.environmental.total_water_litres_per_day.toLocaleString()} L`} />
-                <Line label="Water Share" value={`${assessment.environmental.pct_of_municipal_daily_supply.toFixed(2)}%`} />
-                <Line label="Grid Strain Score" value={assessment.environmental.grid_score} />
-              </Card>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="PUE">
+                  <input
+                    type="number"
+                    className="field"
+                    step="0.01"
+                    value={proposal.pue}
+                    onChange={(e) => setProposal((p) => ({ ...p, pue: Number(e.target.value) }))}
+                  />
+                </Field>
+                <Field label="WUE">
+                  <input
+                    type="number"
+                    className="field"
+                    step="0.01"
+                    value={proposal.wue}
+                    onChange={(e) => setProposal((p) => ({ ...p, wue: Number(e.target.value) }))}
+                  />
+                </Field>
+                <Field label="CAPEX (CAD M)">
+                  <input
+                    type="number"
+                    className="field"
+                    value={proposal.capex_cad}
+                    onChange={(e) => setProposal((p) => ({ ...p, capex_cad: Number(e.target.value) }))}
+                  />
+                </Field>
+              </div>
 
-              <Card title="Economic">
-                <Line label="Permanent Jobs" value={`${assessment.economic.direct_permanent_jobs}`} />
-                <Line label="10y Tax Revenue" value={`$${assessment.economic.estimated_total_tax_revenue_10yr_cad.toLocaleString()}`} />
-                <Line label="Net Fiscal 10y" value={`$${assessment.economic.net_fiscal_impact_10yr_cad.toLocaleString()}`} />
-              </Card>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Cooling Type">
+                  <select
+                    className="field"
+                    value={proposal.cooling_type}
+                    onChange={(e) => setProposal((p) => ({ ...p, cooling_type: e.target.value as DataCentreProposal["cooling_type"] }))}
+                  >
+                    <option value="air">air</option>
+                    <option value="evaporative">evaporative</option>
+                    <option value="liquid_immersion">liquid immersion</option>
+                    <option value="hybrid">hybrid</option>
+                  </select>
+                </Field>
+                <Field label="Facility Type">
+                  <select
+                    className="field"
+                    value={proposal.facility_type}
+                    onChange={(e) => setProposal((p) => ({ ...p, facility_type: e.target.value as DataCentreProposal["facility_type"] }))}
+                  >
+                    <option value="hyperscale">hyperscale</option>
+                    <option value="enterprise">enterprise</option>
+                    <option value="colocation">colocation</option>
+                  </select>
+                </Field>
+              </div>
 
-              <Card title="ML Grid Prediction">
-                <Line label="Strain Probability" value={`${(assessment.grid_strain.strain_probability * 100).toFixed(1)}%`} />
-                <Line label="Rate Increase Probability" value={`${(assessment.grid_strain.rate_increase_probability * 100).toFixed(1)}%`} />
-                <Line label="Predicted Level" value={assessment.grid_strain.predicted_strain_level} />
-                <Line label="Model Version" value={assessment.grid_strain.model_version} />
-              </Card>
-            </div>
-          )}
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+                Inputs with highest sensitivity: <strong>IT load</strong>, <strong>PUE</strong>, and <strong>WUE</strong>. Small changes can move risk bands.
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-400"
+              >
+                {loading ? "Running Assessment..." : "Run Assessment"}
+              </button>
+            </form>
+
+            {progress && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-slate-900">Progress: {progress.stage}</span>
+                  <span className="text-slate-600">{progress.pct}%</span>
+                </div>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${progress.pct}%` }} />
+                </div>
+              </div>
+            )}
+
+            {error && <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+          </Card>
+
+          <Card title="2. Location Context" subtitle="Map and immediate risk context for this site.">
+            <LocationMap assessment={assessment} />
+            {!assessment && <p className="mt-3 text-sm text-slate-500">Run assessment to populate map context.</p>}
+            {assessment && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <RiskChip label="Grid" value={assessment.environmental.grid_score} />
+                <RiskChip label="Water Share" value={`${assessment.environmental.pct_of_municipal_daily_supply.toFixed(2)}%`} />
+                <RiskChip label="AQHI" value={assessment.sociological.air_quality_baseline} />
+              </div>
+            )}
+          </Card>
         </section>
+
+        <section className="grid gap-6 lg:grid-cols-2">
+          <Card title="3. Impact Results" subtitle="Plain-language summary for council discussion.">
+            {!assessment && <p className="text-sm text-slate-500">Results appear after the model run completes.</p>}
+            {assessment && (
+              <div className="space-y-4 text-sm">
+                <NarrativeBlock
+                  title="Environmental"
+                  sentence={`Annual emissions are about ${assessment.environmental.annual_carbon_tonnes.toLocaleString()} tCO2e and daily water demand is ${assessment.environmental.total_water_litres_per_day.toLocaleString()} L.`}
+                />
+                <NarrativeBlock
+                  title="Economic"
+                  sentence={`Estimated net fiscal impact over 10 years is $${assessment.economic.net_fiscal_impact_10yr_cad.toLocaleString()} with ${assessment.economic.direct_permanent_jobs} direct permanent jobs.`}
+                />
+                <NarrativeBlock
+                  title="Grid"
+                  sentence={`Model predicts ${toPct(assessment.grid_strain.strain_probability)} grid strain probability (${assessment.grid_strain.predicted_strain_level}).`}
+                />
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700">
+                  <p className="font-semibold text-slate-900">Composite Decision Signal</p>
+                  <p className="mt-1">{assessment.overall_score.summary_sentence}</p>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card title="4. Decision Brief" subtitle="Negotiation actions and evidence trail.">
+            {!assessment && <p className="text-sm text-slate-500">Decision brief appears after results are generated.</p>}
+            {assessment && (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Negotiation Playbook</p>
+                  <ol className="mt-2 list-decimal space-y-1 pl-5">
+                    {assessment.negotiation_playbook.map((item) => (
+                      <li key={item} className="text-slate-700">
+                        {item}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Data Freshness / Evidence</p>
+                  <div className="mt-2 max-h-44 overflow-auto rounded-xl border border-slate-200">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2">Source</th>
+                          <th className="px-3 py-2">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(assessment.data_freshness).map(([k, v]) => (
+                          <tr key={k} className="border-t border-slate-100">
+                            <td className="px-3 py-2 font-medium text-slate-700">{k}</td>
+                            <td className="px-3 py-2 text-slate-600">{String(v)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function toPct(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function Stepper({ activeStep }: { activeStep: number }) {
+  const steps = ["Proposal Intake", "Location Context", "Impact Results", "Decision Brief"];
+  return (
+    <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white/80 p-3 sm:grid-cols-4">
+      {steps.map((label, idx) => {
+        const num = idx + 1;
+        const active = num === activeStep;
+        const complete = num < activeStep;
+        return (
+          <div
+            key={label}
+            className={`rounded-xl px-3 py-2 text-xs font-medium ${
+              active ? "bg-emerald-700 text-white" : complete ? "bg-emerald-100 text-emerald-900" : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {num}. {label}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LocationMap({ assessment }: { assessment: ImpactAssessment | null }) {
+  if (!assessment) {
+    return <div className="map-shell flex items-center justify-center text-sm text-slate-500">Map preview appears after assessment.</div>;
+  }
+
+  const { lng, lat } = assessment.location;
+  const marker = `${lng},${lat},red`;
+  const src = MAPTILER_KEY
+    ? `https://api.maptiler.com/maps/streets-v2/static/${lng},${lat},8/900x420@2x.png?key=${MAPTILER_KEY}&markers=${marker}`
+    : null;
+
+  return (
+    <div className="map-shell overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+      {src ? (
+        <img src={src} alt="Site map" className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#bbf7d0_0%,#e2e8f0_70%)] p-4 text-center text-sm text-slate-600">
+          Map key missing. Set <code className="mx-1 rounded bg-white px-1">NEXT_PUBLIC_MAPTILER_API_KEY</code> to render static map tiles.
+        </div>
+      )}
+      <div className="border-t border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700">
+        {assessment.location.municipality}, {assessment.location.province} | lat {lat.toFixed(4)}, lng {lng.toFixed(4)}
       </div>
     </div>
   );
@@ -254,20 +371,30 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm font-semibold text-slate-900">{title}</p>
-      <div className="mt-2 space-y-1">{children}</div>
-    </div>
+    <section className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm md:p-6">
+      <p className="text-lg font-semibold text-slate-900">{title}</p>
+      <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
+      <div className="mt-4">{children}</div>
+    </section>
   );
 }
 
-function Line({ label, value }: { label: string; value: string }) {
+function RiskChip({ label, value }: { label: string; value: string }) {
   return (
-    <p className="flex items-center justify-between gap-4">
+    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
       <span className="text-slate-500">{label}</span>
-      <span className="font-medium text-slate-900">{value}</span>
-    </p>
+      <span>{value}</span>
+    </span>
+  );
+}
+
+function NarrativeBlock({ title, sentence }: { title: string; sentence: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <p className="font-semibold text-slate-900">{title}</p>
+      <p className="mt-1 text-slate-700">{sentence}</p>
+    </div>
   );
 }

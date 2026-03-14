@@ -64,5 +64,5 @@ export interface StreamEvent {
   stage: string;
   pct: number;
   result?: ImpactAssessment;
-  error?: string;
+  error?: unknown;
 }
