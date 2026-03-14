@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import Image from "next/image";
+import dynamic from "next/dynamic";
 
 import type { DataCentreProposal, ImpactAssessment, StreamEvent } from "@/types/assessment";
 
@@ -20,6 +20,10 @@ const DEFAULT_PROPOSAL: DataCentreProposal = {
 };
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
+const LocationContextMap = dynamic(() => import("@/components/location-context-map").then((mod) => mod.LocationContextMap), {
+  ssr: false,
+  loading: () => <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading map...</div>,
+});
 
 export default function Home() {
   const [proposal, setProposal] = useState<DataCentreProposal>(DEFAULT_PROPOSAL);
@@ -339,18 +343,14 @@ function LocationMap({ assessment }: { assessment: ImpactAssessment | null }) {
   }
 
   const { lng, lat } = assessment.location;
-  const marker = `${lng},${lat},red`;
-  const src = MAPTILER_KEY
-    ? `https://api.maptiler.com/maps/streets-v2/static/${lng},${lat},8/900x420@2x.png?key=${MAPTILER_KEY}&markers=${marker}`
-    : null;
 
   return (
     <div className="map-shell overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-      {src ? (
-        <Image src={src} alt="Site map" width={900} height={420} unoptimized className="h-full w-full object-cover" />
+      {MAPTILER_KEY ? (
+        <LocationContextMap lat={lat} lng={lng} apiKey={MAPTILER_KEY} />
       ) : (
         <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#bbf7d0_0%,#e2e8f0_70%)] p-4 text-center text-sm text-slate-600">
-          Map key missing. Set <code className="mx-1 rounded bg-white px-1">NEXT_PUBLIC_MAPTILER_API_KEY</code> to render static map tiles.
+          Map key missing. Set <code className="mx-1 rounded bg-white px-1">NEXT_PUBLIC_MAPTILER_API_KEY</code> to render client-side tiles.
         </div>
       )}
       <div className="border-t border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700">

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "leaflet/dist/leaflet.css";
 
 :root {
   --background: #f2f6ef;
@@ -96,6 +97,11 @@ pre {
 
 .map-shell {
   min-height: 260px;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
 }
 
 @layer base {
