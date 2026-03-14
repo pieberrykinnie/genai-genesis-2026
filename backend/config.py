@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     electricity_maps_api_key: str | None = None
     maptiler_api_key: str | None = None
     groq_api_key: str | None = None
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_api_base: str = "https://api.groq.com/openai/v1"
+    llm_backend: str = "groq"
+    llm_temperature: float | None = None
 
     data_dir: Path = Path("./data")
     models_dir: Path = Path("./models")

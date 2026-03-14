@@ -1,4 +1,8 @@
+import os
+
 from fastapi.testclient import TestClient
+
+os.environ.setdefault("GROQ_API_KEY", "test-groq-key")
 
 from main import app
 

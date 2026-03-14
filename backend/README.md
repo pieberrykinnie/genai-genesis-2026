@@ -13,6 +13,10 @@ uv run fastapi dev main.py
 ELECTRICITY_MAPS_API_KEY=
 MAPTILER_API_KEY=
 GROQ_API_KEY=
+GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_API_BASE=https://api.groq.com/openai/v1
+LLM_BACKEND=groq
+LLM_TEMPERATURE=
 STATCAN_CACHE_DIR=./data/statcan_cache
 MODEL_PATH=./models/grid_strain_model.pkl
 ```
