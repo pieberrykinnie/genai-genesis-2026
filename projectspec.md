@@ -10,14 +10,9 @@
 
 ## 0. Project Summary
 
-**What it is:** A web app that lets city councils and urban planners input a proposed
-data centre's technical parameters and a Canadian location, then receive a scored
-multi-dimensional impact report — environmental, economic, and sociological — powered
-by real Canadian open data and a trained XGBoost ML model.
+**What it is:** A dynamic negotiation and impact-modeling engine for municipal governments. By combining real-time Canadian open data with predictive ML, it stress-tests proposed data centers against local infrastructure limits, generating a strict, mathematically sound Community Benefit Agreement (CBA) term sheet to protect local taxpayers.
 
-**The pitch frame (important for demo):** Canada is spending $2B on sovereign AI
-compute. Projects that are poorly sited face community rejection, regulatory delays,
-and reputational damage. This tool gets it right before the first shovel goes in.
+**The pitch frame (important for demo):** The era of vague job promises and secret NDAs is over. City councils face intense public backlash over strained grids, water depletion, and spiked utility bills. DataSite shifts the power dynamic. It arms municipalities to stress-test data center proposals and generates a legally actionable Community Benefit Agreement (CBA) playbook—dictating the exact water replenishment targets, local hiring minimums, and grid infrastructure costs the developer must legally commit to before a single shovel hits the dirt.
 
 **The three AI techniques (tell judges all three):**
 1. Deterministic calculation engine — real formulas from published benchmarks applied
@@ -1073,21 +1068,23 @@ It must not invent figures. Every claim in the report must cite a calculated val
 
 ```python
 GROQ_MODEL = "llama-3.3-70b-versatile"  # Fast, high quality
-# Fallback: "mixtral-8x7b-32768"
 
-SYSTEM_PROMPT = """You are a municipal planning advisor helping city councils evaluate
-data centre proposals in Canada. You receive structured impact assessment data and
-generate a clear, honest report for non-technical decision-makers.
+SYSTEM_PROMPT = """You are a strict municipal planning advisor helping city councils evaluate
+data centre proposals. You generate a clear, mathematically-grounded report and a legally
+actionable Community Benefit Agreement (CBA) playbook.
 
 STRICT RULES:
 1. Every specific number you mention MUST come from the data provided to you.
    Do not estimate, round, or invent figures.
-2. Use plain language. Avoid jargon. Write as if explaining to an elected official.
-3. Be balanced — acknowledge both benefits and risks.
-4. The framing is: better data centres are GOOD for Canada's AI future.
-   This tool helps build them CORRECTLY, not to block them.
-5. Format each section with a clear heading.
-6. The negotiation playbook must be specific and actionable, not generic.
+2. Use plain language. Write as if explaining to an elected official worried about voters.
+3. Be brutally honest about the trade-offs—especially regarding utility rates and jobs.
+4. Format each section with a clear heading.
+5. In the ECONOMIC REALITY CHECK, you MUST explicitly state the contrast between the massive
+   capital expenditure (Capex) and the low number of permanent direct jobs. Emphasize that
+   economic benefit must be captured via tax revenue and CBAs, not direct employment.
+6. The NEGOTIATION PLAYBOOK must be specific and actionable.
+7. CRITICAL: Include STRICT subsidy clawback clauses tied to audited annual performance metrics 
+   for any metric that scores RED or poses a high risk to the community.
 """
 
 def build_report_prompt(assessment: ImpactAssessment) -> str:
@@ -1095,6 +1092,7 @@ def build_report_prompt(assessment: ImpactAssessment) -> str:
     ec = assessment.economic
     s = assessment.sociological
     g = assessment.grid_strain
+    capex = assessment.raw_inputs_used.get('capex_cad_millions')
 
     return f"""
 Generate a city council impact report for the following data centre proposal:
@@ -1102,11 +1100,11 @@ Generate a city council impact report for the following data centre proposal:
 LOCATION: {assessment.location.municipality}, {assessment.location.province}
 PROPOSAL: {assessment.raw_inputs_used.get('it_load_mw')}MW IT load, 
           {assessment.raw_inputs_used.get('facility_type')} facility,
-          ${assessment.raw_inputs_used.get('capex_cad_millions')}M CAD capex
+          ${capex}M CAD capex
 
 --- ENVIRONMENTAL DATA ---
 Annual carbon emissions: {e.annual_carbon_tonnes:,.0f} tonnes CO2e/year
-Grid carbon intensity: {e.carbon_intensity_g_per_kwh:.1f} gCO2/kWh (live from Electricity Maps)
+Grid carbon intensity: {e.carbon_intensity_g_per_kwh:.1f} gCO2/kWh
 Daily water consumption: {e.total_water_litres_per_day:,.0f} litres/day
 As % of municipal daily supply: {e.pct_of_municipal_daily_supply:.1f}%
 Grid power draw: {e.total_power_draw_mw:.1f} MW
@@ -1116,38 +1114,32 @@ Environmental scores: Carbon={e.carbon_score}, Water={e.water_score}, Grid={e.gr
 
 --- ECONOMIC DATA ---
 Construction jobs (direct): {ec.direct_construction_jobs:,}
-Construction jobs (total with multiplier): {ec.peak_construction_jobs:,}
-Permanent operations jobs (honest): {ec.direct_permanent_jobs} direct, {ec.total_permanent_with_multiplier} total
+Permanent operations jobs (honest): {ec.direct_permanent_jobs} direct jobs vs. massive ${capex}M CAD Capex
 10-year estimated tax revenue: ${ec.estimated_total_tax_revenue_10yr_cad/1e6:.1f}M CAD
 Net fiscal impact (after infrastructure costs): ${ec.net_fiscal_impact_10yr_cad/1e6:.1f}M CAD
-Estimated household electricity increase: ${ec.estimated_household_electricity_increase_annual_cad:.0f}/year
+Estimated household utility rate increase (Ratepayer cost-shift): ${ec.estimated_household_electricity_increase_annual_cad:.0f}/year
 
 --- SOCIOLOGICAL DATA ---
-Nearest First Nation: {s.nearest_first_nation_km:.1f} km ({s.nearest_first_nation_name or 'unknown'})
-Treaty territory: {s.treaty_territory or 'not identified'}
-Active water advisories in region: {s.active_water_advisories_nearby}
-Indigenous flag (requires consultation): {s.indigenous_flag}
+Nearest First Nation: {s.nearest_first_nation_km:.1f} km ({s.nearest_first_nation_name})
 Community Vulnerability Index: {s.community_vulnerability_index:.0f}/100
-Local tech hiring probability: {s.estimated_local_hiring_pct:.0f}%
-Noise impact radius: {s.estimated_noise_radius_m:.0f}m
+NIMBY Risk Index (Population in noise zone): {s.residential_population_in_noise_zone:,} residents
 Overall sociological score: {s.sociological_score}
 
 --- OVERALL ---
 Composite RAG score: {assessment.overall_score.composite_rag}
 
 Generate:
-1. EXECUTIVE SUMMARY (3 sentences, must include the composite RAG score)
+1. EXECUTIVE SUMMARY (3 sentences, must include the composite RAG score and ratepayer risk)
 2. ENVIRONMENTAL IMPACT (2-3 paragraphs, cite every number above)
-3. ECONOMIC REALITY CHECK (2 paragraphs — honest about permanent jobs vs. promises)
-4. COMMUNITY CONSIDERATIONS (2 paragraphs, including Indigenous rights if flagged)
+3. ECONOMIC REALITY CHECK (2 paragraphs — explicitly contrast the ${capex}M investment against the low {ec.direct_permanent_jobs} permanent jobs, noting the risk of ratepayer utility increases)
+4. COMMUNITY & NIMBY CONSIDERATIONS (2 paragraphs, highlighting the {s.residential_population_in_noise_zone:,} residents in the noise zone)
 5. GRID SUSTAINABILITY (1 paragraph, cite ML model probability)
-6. NEGOTIATION PLAYBOOK (5-7 specific, actionable conditions council should require)
+6. CBA NEGOTIATION PLAYBOOK & CLAWBACKS (5-7 specific, legally actionable conditions)
 
-For the negotiation playbook, base recommendations on the specific risk scores:
-- If water score = red: specify exact cooling technology requirement
-- If Indigenous flag = True: specify FPIC consultation requirement  
-- If grid strain > 50%: specify demand response participation requirement
-- If local hiring < 20%: specify community benefits agreement requirement
+For the playbook, base recommendations on the risks:
+- If household utility increases > $0: Demand a grid infrastructure cost-coverage agreement.
+- If water score = red: Specify a financial clawback clause tying property tax breaks to strict water replenishment auditing.
+- If NIMBY risk population is high: Demand verifiable noise abatement structures.
 """
 
 
