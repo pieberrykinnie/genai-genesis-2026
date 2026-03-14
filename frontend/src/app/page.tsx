@@ -70,6 +70,9 @@ export default function Home() {
           if (!payload) continue;
 
           const evt = JSON.parse(payload) as StreamEvent;
+          if (evt.stage === "error") {
+            throw new Error(evt.error ?? "Assessment failed");
+          }
           setProgress(evt);
           if (evt.stage === "complete" && evt.result) {
             setAssessment(evt.result);

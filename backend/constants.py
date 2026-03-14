@@ -18,17 +18,19 @@ PROVINCE_TO_ZONE: dict[str, str] = {
     "PE": "CA-PE",
 }
 
+# Government of Canada (ECCC) 2026 provincial/territorial electricity emission factors,
+# Table 5.3 "Grid electricity consumption intensity" (g CO2e/kWh).
 FALLBACK_CARBON_INTENSITY: dict[str, float] = {
-    "QC": 1.8,
-    "MB": 3.5,
+    "QC": 1.9,
+    "MB": 2.2,
     "BC": 11.0,
-    "ON": 29.0,
-    "NL": 30.0,
-    "SK": 490.0,
-    "AB": 530.0,
-    "NB": 200.0,
-    "NS": 650.0,
-    "PE": 8.0,
+    "ON": 59.0,
+    "NL": 14.0,
+    "SK": 630.0,
+    "AB": 438.0,
+    "NB": 110.0,
+    "NS": 590.0,
+    "PE": 35.0,
 }
 
 PROVINCIAL_CAPACITY_MW: dict[str, float] = {

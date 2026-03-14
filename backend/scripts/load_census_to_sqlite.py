@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sqlite3
+import sys
 import zipfile
 from pathlib import Path
 
@@ -79,6 +80,14 @@ def load_census_csv(conn: sqlite3.Connection, csv_path: Path) -> int:
 
         # Long-format expected path (CHARACTERISTIC_ID + VALUE)
         has_long_format = any(k in fieldnames for k in CHAR_KEYS) and any(k in fieldnames for k in VALUE_KEYS)
+        has_wide_format = any("Population, 2021" in c for c in fieldnames)
+
+        if not has_long_format and not has_wide_format:
+            raise ValueError(
+                f"Census CSV format not recognised. "
+                f"Found columns: {fieldnames}. "
+                f"Expected CHARACTERISTIC_ID+VALUE (long format) or 'Population, 2021' (wide format)."
+            )
 
         if has_long_format:
             for row in reader:
@@ -148,6 +157,18 @@ def load_water_csv(conn: sqlite3.Connection, csv_path: Path) -> int:
     inserted = 0
     with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+
+        sample_row = {k: "" for k in fieldnames}
+        geo_key_check = _find_key(sample_row, GEO_UID_KEYS)
+        value_key_check = _find_key(sample_row, WATER_VALUE_KEYS)
+        if not geo_key_check or not value_key_check:
+            raise ValueError(
+                f"Water CSV format not recognised. "
+                f"Found columns: {fieldnames}. "
+                f"Expected one of {GEO_UID_KEYS} and one of {WATER_VALUE_KEYS}."
+            )
+
         for row in reader:
             geo_key = _find_key(row, GEO_UID_KEYS)
             value_key = _find_key(row, WATER_VALUE_KEYS)
@@ -193,13 +214,25 @@ def main() -> None:
         conn.commit()
 
     print(f"Loaded census rows: {census_rows}")
-    if census_rows == 0:
-        print("WARNING: No census rows ingested. Input file likely does not contain expected CSD profile vectors.")
-        print("WARNING: Runtime will use demographic defaults until full census profile data is loaded.")
     print(f"Loaded water rows: {water_rows}")
     print(f"Census source used: {census_csv_path}")
     print(f"Water source used: {water_csv_path}")
     print(f"SQLite DB: {args.db}")
+
+    if census_rows == 0:
+        print(
+            "ERROR: No census rows ingested. The input file does not contain expected "
+            "CSD profile vectors. Cannot proceed with demographic defaults.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if water_rows == 0:
+        print(
+            "ERROR: No water-use rows ingested. The input file does not contain expected "
+            "municipal water supply data.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
