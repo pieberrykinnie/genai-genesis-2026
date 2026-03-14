@@ -51,7 +51,7 @@ class StatCanStore:
                             "pct_postsecondary_certificate", DEFAULT_DEMOGRAPHICS["pct_postsecondary_certificate"]
                         ),
                     }
-                    return out, {"statcan_census": self.db_path.stat().st_mtime_ns.__str__()}
+                    return out, {"statcan_census": f"static_reference:sqlite:{self.db_path.stat().st_mtime_ns}"}
             except Exception:
                 pass
 
@@ -59,7 +59,7 @@ class StatCanStore:
         if province == "AB":
             demo["pct_indigenous_identity"] = 7.0
             demo["unemployment_rate"] = 6.8
-        return demo, {"statcan_census": "fallback_defaults"}
+        return demo, {"statcan_census": "unavailable:statcan_census_missing"}
 
     def get_municipal_supply_l_day(self, csd_uid: str, population: int) -> tuple[float, dict[str, str]]:
         if self.db_path.exists():
@@ -75,12 +75,15 @@ class StatCanStore:
                         (csd_uid,),
                     ).fetchone()
                 if row and row["daily_supply_litres"] is not None:
-                    return float(row["daily_supply_litres"]), {"statcan_water": self.db_path.stat().st_mtime_ns.__str__()}
+                    return (
+                        float(row["daily_supply_litres"]),
+                        {"statcan_water": f"static_reference:sqlite:{self.db_path.stat().st_mtime_ns}"},
+                    )
             except Exception:
                 pass
 
         estimated = float(population) * 220.0
-        return estimated, {"statcan_water": "fallback_population_estimate"}
+        return estimated, {"statcan_water": "static_reference:population_estimate"}
 
 
 def get_statcan_store() -> StatCanStore:

@@ -21,55 +21,77 @@ PROVINCE_DEFAULT_COORDS: dict[str, tuple[float, float, str, str, str]] = {
 }
 
 
+class GeocodingUnavailableError(RuntimeError):
+    pass
+
+
+def province_centroid(province: str, municipality_hint: str | None = None) -> dict:
+    lat, lng, municipality, csd, cd = PROVINCE_DEFAULT_COORDS[province]
+    return {
+        "lat": lat,
+        "lng": lng,
+        "municipality": municipality_hint or municipality,
+        "census_subdivision_id": csd,
+        "census_division_id": cd,
+    }
+
+
 async def geocode_address(address: str, province: str) -> tuple[dict, dict[str, str]]:
     settings = get_settings()
-    if settings.maptiler_api_key:
-        try:
-            async with httpx.AsyncClient(timeout=settings.request_timeout_seconds) as client:
-                url = f"https://api.maptiler.com/geocoding/{quote(address)}.json"
-                resp = await client.get(url, params={"key": settings.maptiler_api_key, "country": "ca", "limit": 1})
-                resp.raise_for_status()
-                payload = resp.json()
 
-            features = payload.get("features", [])
-            if features:
-                top = features[0]
-                lng, lat = top.get("center", [None, None])
-                context_items = top.get("context") or []
-                municipality = top.get("text") or top.get("place_name") or "Unknown"
-                csd = ""
-                cd = ""
-                for item in context_items:
-                    code = str(item.get("short_code") or "")
-                    if code.startswith("ca-"):
-                        continue
-                    if code.isdigit() and len(code) == 7:
-                        csd = code
-                    if code.isdigit() and len(code) == 4:
-                        cd = code
-                if lat is not None and lng is not None:
-                    return (
-                        {
-                            "lat": float(lat),
-                            "lng": float(lng),
-                            "municipality": municipality,
-                            "census_subdivision_id": csd or "",
-                            "census_division_id": cd or "",
-                        },
-                        {"maptiler_geocoding": datetime.now(timezone.utc).isoformat()},
-                    )
-        except Exception:
-            pass
+    if not settings.maptiler_api_key:
+        if settings.strict_data_mode:
+            raise GeocodingUnavailableError("maptiler_key_missing")
+        municipality_hint = address.split(",")[0].strip() if address else None
+        return province_centroid(province, municipality_hint=municipality_hint), {
+            "maptiler_geocoding": "static_reference:province_centroid"
+        }
 
-    lat, lng, municipality, csd, cd = PROVINCE_DEFAULT_COORDS[province]
-    inferred_municipality = address.split(",")[0].strip() if address else ""
-    return (
-        {
-            "lat": lat,
-            "lng": lng,
-            "municipality": inferred_municipality or municipality,
-            "census_subdivision_id": csd,
-            "census_division_id": cd,
-        },
-        {"maptiler_geocoding": "fallback_province_centroid"},
-    )
+    try:
+        async with httpx.AsyncClient(timeout=settings.request_timeout_seconds) as client:
+            url = f"https://api.maptiler.com/geocoding/{quote(address)}.json"
+            resp = await client.get(url, params={"key": settings.maptiler_api_key, "country": "ca", "limit": 1})
+            resp.raise_for_status()
+            payload = resp.json()
+
+        features = payload.get("features", [])
+        if not features:
+            raise GeocodingUnavailableError("no_features")
+
+        top = features[0]
+        lng, lat = top.get("center", [None, None])
+        if lat is None or lng is None:
+            raise GeocodingUnavailableError("missing_coordinates")
+
+        context_items = top.get("context") or []
+        municipality = top.get("text") or top.get("place_name") or "Unknown"
+        csd = ""
+        cd = ""
+        for item in context_items:
+            code = str(item.get("short_code") or "")
+            if code.startswith("ca-"):
+                continue
+            if code.isdigit() and len(code) == 7:
+                csd = code
+            if code.isdigit() and len(code) == 4:
+                cd = code
+
+        return (
+            {
+                "lat": float(lat),
+                "lng": float(lng),
+                "municipality": municipality,
+                "census_subdivision_id": csd or "",
+                "census_division_id": cd or "",
+            },
+            {"maptiler_geocoding": f"live:{datetime.now(timezone.utc).isoformat()}"},
+        )
+    except GeocodingUnavailableError:
+        raise
+    except Exception as exc:
+        if settings.strict_data_mode:
+            raise GeocodingUnavailableError(exc.__class__.__name__) from exc
+        municipality_hint = address.split(",")[0].strip() if address else None
+        return province_centroid(province, municipality_hint=municipality_hint), {
+            "maptiler_geocoding": "static_reference:province_centroid"
+        }

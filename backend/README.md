@@ -17,6 +17,10 @@ GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_API_BASE=https://api.groq.com/openai/v1
 LLM_BACKEND=groq
 LLM_TEMPERATURE=
+LLM_PROVIDER=groq
+BITNET_API_BASE=http://127.0.0.1:8080/v1
+BITNET_MODEL=bitnet-b1.58-2B-4T
+STRICT_DATA_MODE=true
 STATCAN_CACHE_DIR=./data/statcan_cache
 MODEL_PATH=./models/grid_strain_model.pkl
 ```
@@ -29,10 +33,20 @@ MODEL_PATH=./models/grid_strain_model.pkl
 
 ## Data + ML Scripts
 
-All scripts exit non-zero on failure (missing data, unrecognised formats, download errors).
-
-- `uv run python scripts/download_data.py` — pass `--strict` to abort on the first download failure
-  - **NOTE**: All the IESO download will fail, guaranteed. Manually download `PUB_Demand_2020.csv` to `PUB_Demand_2026.csv` to `data/` instead from this link: [https://reports-public.ieso.ca/public/Demand/](https://reports-public.ieso.ca/public/Demand/).
+- `uv run python scripts/download_data.py`
+- `uv run python scripts/download_data.py --allow-errors` (optional; default exits non-zero on failures)
 - `uv run python scripts/load_census_to_sqlite.py --db ./data/census_csd.db --census-csv ./data/98-10-0001-01.zip --water-csv ./data/38-10-0250-01.zip`
-  - Or, if the `.zip` file names aren't extract, use those instead.
+- `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl`
+- `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl --allow-synthetic` (explicit opt-in only)
+
+## IESO Playwright Downloader (for anti-bot pages)
+
+If direct script download returns HTML interstitial pages for IESO files:
+
+1. `uv sync`
+2. `uv run playwright install chromium`
+3. `uv run python scripts/download_ieso_playwright.py --start-year 2020 --end-year 2025 --out-dir ./data`
+
+Then retrain:
+
 - `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl`

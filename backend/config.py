@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     groq_api_base: str = "https://api.groq.com/openai/v1"
     llm_backend: str = "groq"
     llm_temperature: float | None = None
+    llm_provider: str = "groq"
+    bitnet_api_base: str = "http://127.0.0.1:8080/v1"
+    bitnet_model: str = "bitnet-b1.58-2B-4T"
 
     data_dir: Path = BASE_DIR / "data"
     models_dir: Path = BASE_DIR / "models"
@@ -32,6 +35,7 @@ class Settings(BaseSettings):
 
     request_timeout_seconds: float = 12.0
     cache_ttl_seconds: int = 1800
+    strict_data_mode: bool = True
 
 
 @lru_cache(maxsize=1)

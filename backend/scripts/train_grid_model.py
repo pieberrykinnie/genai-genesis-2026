@@ -34,12 +34,12 @@ def _load_ieso(path: Path, province: str = "ON") -> pd.DataFrame:
     out = pd.DataFrame()
     out["demand_mw"] = pd.to_numeric(df[demand_col], errors="coerce")
     out["hour"] = pd.to_numeric(df.get("Hour", 12), errors="coerce").fillna(12)
-    
+
     dt = pd.to_datetime(df.get("Date"), errors="coerce")
     out["month"] = dt.dt.month.fillna(6)
     out["day_of_week"] = dt.dt.dayofweek.fillna(2)
     out["is_weekend"] = out["day_of_week"].isin([5, 6]).astype(float)
-    
+
     out["province"] = province
     return out.dropna(subset=["demand_mw"])
 
@@ -54,17 +54,17 @@ def _load_aeso(path: Path, province: str = "AB") -> pd.DataFrame:
     out = pd.DataFrame()
     out["demand_mw"] = pd.to_numeric(df[demand_col], errors="coerce")
     out["hour"] = pd.to_numeric(df.get("Hour", 12), errors="coerce").fillna(12)
-    
+
     dt = pd.to_datetime(df.get("Date", df.get("DATE", None)), errors="coerce")
     out["month"] = dt.dt.month.fillna(6)
     out["day_of_week"] = dt.dt.dayofweek.fillna(2)
     out["is_weekend"] = out["day_of_week"].isin([5, 6]).astype(float)
-    
+
     out["province"] = province
     return out.dropna(subset=["demand_mw"])
 
 
-def _build_dataset(data_dir: Path, *, allow_synthetic: bool = False) -> tuple[pd.DataFrame, bool]:
+def _build_dataset(data_dir: Path, allow_synthetic: bool) -> tuple[pd.DataFrame, bool]:
     frames: list[pd.DataFrame] = []
 
     ieso_patterns = ["*ieso*Demand*.csv", "*PUB_Demand*.csv"]
@@ -90,15 +90,13 @@ def _build_dataset(data_dir: Path, *, allow_synthetic: bool = False) -> tuple[pd
                 print(f"  WARNING: skipping {path.name}: {exc}")
                 continue
 
+    if not frames and not allow_synthetic:
+        raise RuntimeError(
+            "No real IESO/AESO CSVs were found. Download real data first or re-run with --allow-synthetic."
+        )
+
     if not frames:
-        all_patterns = ieso_patterns + aeso_patterns
-        if not allow_synthetic:
-            raise FileNotFoundError(
-                f"No IESO/AESO CSV files found in {data_dir}. "
-                f"Searched patterns: {all_patterns}. "
-                f"Pass --allow-synthetic to train on generated data instead."
-            )
-        print("WARNING: No real IESO/AESO CSVs found — generating synthetic fallback data.")
+        print("WARNING: No real IESO/AESO CSVs found - generating synthetic fallback data.")
         rng = np.random.default_rng(42)
         n = 5000
         province = rng.choice(["ON", "AB"], n)
@@ -111,7 +109,19 @@ def _build_dataset(data_dir: Path, *, allow_synthetic: bool = False) -> tuple[pd
         day_of_week = rng.integers(0, 7, n)
         is_weekend = np.isin(day_of_week, [5, 6]).astype(float)
         hour = rng.integers(1, 25, n)
-        return pd.DataFrame({"province": province, "demand_mw": demand, "month": month, "day_of_week": day_of_week, "is_weekend": is_weekend, "hour": hour}), True
+        return (
+            pd.DataFrame(
+                {
+                    "province": province,
+                    "demand_mw": demand,
+                    "month": month,
+                    "day_of_week": day_of_week,
+                    "is_weekend": is_weekend,
+                    "hour": hour,
+                }
+            ),
+            True,
+        )
 
     print(f"  Loaded {len(frames)} file(s), {sum(len(f) for f in frames)} total rows.")
     return pd.concat(frames, ignore_index=True), False
@@ -120,11 +130,8 @@ def _build_dataset(data_dir: Path, *, allow_synthetic: bool = False) -> tuple[pd
 def _feature_engineer(df: pd.DataFrame) -> pd.DataFrame:
     rng = np.random.default_rng(42)
     capacity = np.where(df["province"] == "ON", 37205.0, 22000.0)
-    
-    # Randomly simulate a proposed data centre load between 0 and 500 MW during training
+
     proposal_draw = rng.uniform(0, 500, len(df))
-    
-    # Calculate utilization as (historical background demand + new proposal load) / grid capacity
     utilization = (df["demand_mw"] + proposal_draw) / capacity
 
     out = pd.DataFrame()
@@ -178,7 +185,6 @@ def train(config: TrainConfig) -> None:
         stratify=y,
     )
 
-    # Keep xgboost-typed hyperparameters and gracefully fallback if unsupported in fallback estimator.
     try:
         model = XGBClassifier(
             n_estimators=200,
@@ -207,7 +213,7 @@ def train(config: TrainConfig) -> None:
         "feature_importances": list(np.asarray(feature_importances, dtype=float)),
         "train_auc": auc,
         "cv_auc": auc,
-        "version": "xgboost_v1_synthetic_fallback" if used_synthetic else "xgboost_v1_ieso_aeso_2024",
+        "version": "xgboost_v1_synthetic_optin" if used_synthetic else "xgboost_v1_ieso_aeso_2024",
         "training_rows": int(len(X)),
         "used_synthetic_data": used_synthetic,
     }

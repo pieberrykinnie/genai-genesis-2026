@@ -3,6 +3,7 @@ import os
 from fastapi.testclient import TestClient
 
 os.environ.setdefault("GROQ_API_KEY", "test-groq-key")
+os.environ.setdefault("STRICT_DATA_MODE", "false")
 
 from main import app
 
