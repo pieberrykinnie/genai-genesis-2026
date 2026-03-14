@@ -1,0 +1,85 @@
+---
+description: Frontend scope, stack, API types, and structure per DataSite Impact Analyzer spec
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# Frontend Scope & Standards (DataSite Impact Analyzer)
+
+This rule applies when working under **frontend/** only. Backend (Python, FastAPI, ML, data pipelines) lives outside the frontend. Align all UI and API calls with the project spec (projectspec.md) and the API contract below.
+
+---
+
+## Stack (Frontend Only)
+
+- **Runtime:** Next.js 16.1.6 (App Router)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS v4
+- **Package manager:** pnpm 10.32.1 (do not use npm)
+- **UI:** shadcn/ui via shadcn MCP; keep components minimal (see `shadcn-minimal` rule)
+
+---
+
+## API Contract (Frontend Must Match)
+
+**Assess endpoint:** `POST /api/assess` — body = `DataCentreProposal`, response = `ImpactAssessment`.  
+**Streaming:** `POST /api/assess/stream` — SSE; events include `stage` and `pct`; final event has `stage: "complete"` and `result: ImpactAssessment`. Expect 8–15s total; show progress in UI.
+
+**Request type (define in `frontend/src/types/assessment.ts` or equivalent):**
+
+```ts
+type CanadianProvince = "ON" | "AB" | "BC" | "QC" | "MB" | "SK" | "NS" | "NB" | "NL" | "PE"
+type CoolingType = "air" | "evaporative" | "liquid_immersion" | "hybrid"
+type FacilityType = "hyperscale" | "enterprise" | "colocation"
+
+interface DataCentreProposal {
+  address: string
+  province: CanadianProvince
+  it_load_mw: number        // 1–500
+  pue: number              // 1.1–2.0, default 1.5
+  wue: number              // 0.5–3.0 L/kWh, default 1.9
+  cooling_type: CoolingType
+  facility_type: FacilityType
+  capex_cad: number        // CAD millions
+  construction_months: number  // 12–48
+  has_onsite_generation?: boolean
+  renewable_ppa?: boolean
+}
+```
+
+**Response type:** Mirror backend `ImpactAssessment` — metadata, `environmental`, `economic`, `sociological`, `grid_strain`, `overall_score`, `negotiation_playbook`, `report_narrative`, `raw_inputs_used`, `calculation_methodology`. Use RAG scores `"green" | "amber" | "red"` for UI (e.g. ScoreCard traffic lights).
+
+---
+
+## App Structure (from Spec)
+
+- **Routes:** `/` — landing + proposal form entry; `/dashboard` — dashboard; `/dashboard/new-proposal` — step-by-step proposal (tabs: Basic Info → Location → Specification → Economics); `/results` or `/dashboard/results` — results dashboard after assessment.
+- **Key components:** ProposalForm (inputs aligned to `DataCentreProposal`), MapView (MapTiler pin + radii), ImpactDashboard (three-pillar results), ScoreCard (RAG display), ReportViewer (full LLM report + negotiation playbook).
+- **Types:** Keep `frontend/src/types/assessment.ts` (or equivalent) in sync with backend Pydantic models so request/response are typed end-to-end.
+
+---
+
+## What the Frontend Does
+
+- **Input collection:** Forms and tabs that collect all `DataCentreProposal` fields; address geocoded to lat/lng via MapTiler where needed.
+- **Map UX:** MapTiler for pin placement; display noise radius, substation distance, proximity to residential/water when backend or static data provides them.
+- **Call backend:** POST proposal to `/api/assess` or use `/api/assess/stream` and show stage progress (geocoding → grid/census → calculations → ML → report).
+- **Results:** Show environmental, economic, sociological pillars; grid strain (ML); composite RAG; negotiation playbook list; full report narrative. Contrast “Promises” vs “Calculated Reality” in design.
+- **Loading/errors:** Clear feedback during 8–15s assessment and on failure.
+
+---
+
+## What the Frontend Must NOT Do
+
+- Run carbon, water, grid, jobs, or tax calculations (backend).
+- Call Groq or any LLM directly (backend).
+- Store or compute Electricity Maps, StatsCan, or provincial capacity data (backend).
+- Train or run the XGBoost model (backend).
+
+---
+
+## Design Direction
+
+- **Clarity and contrast:** “Company claims” vs “calculated reality” visually distinct (e.g. soft green for promises, bold charts for reality).
+- **Map-first where relevant:** MapTiler so planners see spatial impact at a glance.
+- **Minimal, professional:** Suited for city council/planners; avoid playful or consumer-style UI.

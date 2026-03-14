@@ -1,0 +1,87 @@
+---
+description: Project vision, API contract, and spec reference for DataSite Impact Analyzer
+alwaysApply: true
+---
+
+# Project Reference: DataSite Impact Analyzer
+
+**Full spec:** See `projectspec.md` (or equivalent project spec document) for complete API schemas, data sources, calculation formulas, ML training, and pre-hackathon checklist. This rule summarizes the product and points the AI to the right contracts.
+
+---
+
+## What We're Building
+
+**DataSite Impact Analyzer** — A web app for **city councils and urban planners** to input a proposed data centre’s technical parameters and a Canadian location, then receive a **scored multi-dimensional impact report** (environmental, economic, sociological) powered by **real Canadian open data** and a trained **XGBoost ML model**.
+
+**Pitch for demo:** Canada is investing in sovereign AI compute. Poorly sited projects face community pushback and regulatory delays. This tool helps get siting right before the first shovel goes in.
+
+**Hackathon:** GenAI Genesis 2026 | Google Sustainability Track. **Minimize features, maximize real data.**
+
+---
+
+## Three AI Techniques (Tell Judges All Three)
+
+1. **Deterministic calculation engine** — Real formulas from published benchmarks (IEA, The Green Grid WUE, CBRE, etc.) applied to real Canadian datasets.
+2. **XGBoost ML model** — Trained on real IESO/AESO historical grid data to predict **grid strain probability** from a proposed load addition.
+3. **Groq LLM** — Grounded report + negotiation playbook generation; it may **only cite numbers** produced by layers 1 and 2 (no invented figures).
+
+---
+
+## Tech Stack
+
+- **Frontend:** TypeScript, Next.js 16.1.6, Tailwind v4, **pnpm 10.32.1** (use pnpm only, not npm).
+- **Backend:** Python 3.14, FastAPI 0.135, uv 0.10.10.
+- **ML:** scikit-learn + XGBoost (trained offline, loaded at runtime).
+- **Geo:** MapTiler API (geocoding, map tiles, land cover).
+- **LLM:** Groq API (e.g. llama-3.3-70b-versatile or mixtral-8x7b).
+- **Data:** Electricity Maps, IESO/AESO, StatsCan, Indigenous Services Canada, ECCC drought; see full spec for URLs and fallbacks.
+
+---
+
+## API Contract (Summary)
+
+**Single main endpoint:** `POST /api/assess` — body = `DataCentreProposal`, response = `ImpactAssessment`.  
+**Streaming:** `POST /api/assess/stream` — SSE events for stages (geocoding, fetching_grid_data, fetching_census_data, running_calculations, running_ml_model, generating_report, complete with result). Response time ~8–15s; frontend should show progress.
+
+**Request shape (align frontend form to this):**  
+Location (address, province), it_load_mw, pue, wue, cooling_type, facility_type, capex_cad (millions), construction_months, optional has_onsite_generation, renewable_ppa.
+
+**Response shape:**  
+Metadata (proposal_id, location, timestamp, data_freshness), three pillars (environmental, economic, sociological), grid_strain (ML output), overall_score (composite RAG), negotiation_playbook (list of strings), report_narrative, raw_inputs_used, calculation_methodology.  
+RAG scores are `"green" | "amber" | "red"` throughout.
+
+---
+
+## Data Sources (Summary)
+
+- **Electricity Maps:** Real-time provincial grid carbon intensity (gCO2eq/kWh); Canadian zones CA-ON, CA-AB, CA-BC, etc. Fallback: static provincial table in spec.
+- **IESO (Ontario) / AESO (Alberta):** Historical hourly demand (and price for AESO) for ML training; pre-download CSVs pre-hackathon.
+- **StatsCan:** Census (CSD-level demographics), water use table; pre-load to SQLite for fast lookups.
+- **Indigenous Services Canada:** Water advisories, First Nations reserve boundaries (GeoJSON); pre-compute reserve centroids.
+- **ECCC / Drought monitor:** Watershed stress; province-level fallback table in spec.
+
+Every source has a documented fallback in the full spec.
+
+---
+
+## Demo Scenarios (Pre-Calculate for Demo)
+
+- **Wonder Valley, Grande Prairie, AB** — Large hyperscale, evaporative cooling; expect red water score, Indigenous flag, high grid strain.
+- **Lévis, QC** — Smaller enterprise, liquid immersion, renewable PPA; expect green carbon, better sociological score.
+
+---
+
+## Repository Structure (from Spec)
+
+- `frontend/` — Next.js app; `src/app/page.tsx` (landing + proposal form), `src/app/results/page.tsx` (results dashboard), `src/components/` (ProposalForm, ImpactDashboard, ScoreCard, MapView, ReportViewer), `src/types/assessment.ts` (TypeScript types matching backend models).
+- `backend/` — FastAPI (main.py, models.py), calculator/, data_sources/, ml/, llm/.
+- `data/` — Pre-downloaded CSVs, census SQLite, reserves centroids (gitignored except samples).
+- `models/` — grid_strain_model.pkl.
+- `scripts/` — train_grid_model.py, download_data.py, load_census_to_sqlite.py.
+
+---
+
+## Judging & Design
+
+- **Judging:** Innovation & originality, technical complexity & execution, product experience & design, impact & practical value.
+- **UI contrast:** Show company “Promises” (e.g. soft green) vs “Calculated Reality” (bold charts). Map-first where relevant; minimal, professional for council/planners.

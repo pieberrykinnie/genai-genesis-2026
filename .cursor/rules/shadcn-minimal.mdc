@@ -1,0 +1,23 @@
+---
+description: Use shadcn UI from MCP and keep components minimal
+alwaysApply: true
+---
+
+# Shadcn and minimal components
+
+## Use shadcn MCP first
+
+- **Always** add UI from the shadcn registry via the shadcn MCP tools before building custom UI.
+- Use `mcp_shadcn_search_items_in_registries` or `mcp_shadcn_list_items_in_registries` to find components.
+- Use `mcp_shadcn_get_add_command_for_items` to get the CLI command, then run it (e.g. `npx shadcn@latest add button`) to add the component.
+- Use `mcp_shadcn_view_items_in_registries` or `mcp_shadcn_get_item_examples_from_registries` for usage.
+
+## Keep components minimal
+
+- Prefer small, focused components. Reuse shadcn primitives: Button, Card, Input, Label, Select, Tabs, etc.
+- When the registry has no matching component (e.g. stepper), build a minimal custom component using only existing shadcn parts and `cn` from `@/lib/utils`.
+- Avoid extra wrappers or heavy abstractions unless clearly needed.
+
+## Frontend path
+
+- Shadcn and app code live under `frontend/`. Use `frontend/components.json` and `frontend/src/components/ui/` for shadcn components.
