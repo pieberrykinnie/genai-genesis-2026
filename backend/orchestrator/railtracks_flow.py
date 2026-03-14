@@ -217,8 +217,11 @@ async def _write_memo(
     try:
         import railtracks as rt
 
-        from orchestrator.agents import MemoGroundingVerifierAgent, MemoWriterAgent
+        from orchestrator.agents import get_memo_grounding_verifier_agent, get_memo_writer_agent
         from orchestrator.validators import coerce_council_memo, coerce_verifier_result, validate_memo_grounding
+
+        memo_writer_agent = get_memo_writer_agent()
+        memo_grounding_verifier_agent = get_memo_grounding_verifier_agent()
 
         clause_text = {clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids}
 
@@ -279,7 +282,7 @@ async def _write_memo(
             )
 
             draft_raw = await rt.call(
-                MemoWriterAgent,
+                memo_writer_agent,
                 _memo_writer_prompt(proposal, evidence_pack, policy, clause_text),
             )
             draft, draft_parse_errors = coerce_council_memo(draft_raw)
@@ -292,7 +295,7 @@ async def _write_memo(
             else:
                 deterministic_ok, deterministic_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
                 verifier_raw = await rt.call(
-                    MemoGroundingVerifierAgent,
+                    memo_grounding_verifier_agent,
                     _memo_verifier_prompt(proposal, evidence_pack, policy, draft, clause_text),
                 )
                 verifier_passed, verifier_issues, verifier_parse_errors = coerce_verifier_result(verifier_raw)
@@ -309,7 +312,7 @@ async def _write_memo(
 
             evidence_with_errors = {**evidence_pack, "validation_errors": issues}
             repaired_raw = await rt.call(
-                MemoWriterAgent,
+                memo_writer_agent,
                 _memo_writer_prompt(
                     proposal,
                     evidence_with_errors,
@@ -330,7 +333,7 @@ async def _write_memo(
 
             repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
             repaired_verifier_raw = await rt.call(
-                MemoGroundingVerifierAgent,
+                memo_grounding_verifier_agent,
                 _memo_verifier_prompt(proposal, evidence_pack, policy, repaired, clause_text),
             )
             repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = coerce_verifier_result(
