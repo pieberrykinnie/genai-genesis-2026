@@ -150,7 +150,9 @@ data/*.zip
 data/*.json
 data/*.jsonl
 data/*.db
+data/fsa_monthly/
 models/*.pkl
+.playwright/
 
 # Spyder project settings
 .spyderproject
