@@ -1,3 +1,6 @@
+import asyncio
+import json
+
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -31,9 +34,31 @@ async def api_assess(payload: dict):
 
 @app.post("/api/assess/stream")
 async def api_assess_stream(payload: dict):
-    # Placeholder: hook into Railtracks session broadcast
     async def event_generator():
-        yield 'data: {"stage": "started"}\n\n'
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        async def publish(event: dict) -> None:
+            await queue.put(event)
+
+        task = asyncio.create_task(assess_flow(payload, progress_callback=publish))
+
+        try:
+            while True:
+                if task.done() and queue.empty():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    continue
+                yield f"data: {json.dumps(event)}\n\n"
+
+            result = await task
+            yield f"data: {json.dumps({'stage': 'complete', 'pct': 100, 'result': result.model_dump(mode='json')})}\n\n"
+        except Exception as exc:
+            if not task.done():
+                task.cancel()
+            yield f"data: {json.dumps({'stage': 'error', 'pct': 100, 'error': str(exc)})}\n\n"
+
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 

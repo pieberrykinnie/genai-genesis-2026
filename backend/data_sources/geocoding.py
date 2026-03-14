@@ -62,11 +62,12 @@ async def geocode_address(address: str, province: str) -> tuple[dict, dict[str, 
             pass
 
     lat, lng, municipality, csd, cd = PROVINCE_DEFAULT_COORDS[province]
+    inferred_municipality = address.split(",")[0].strip() if address else ""
     return (
         {
             "lat": lat,
             "lng": lng,
-            "municipality": municipality,
+            "municipality": inferred_municipality or municipality,
             "census_subdivision_id": csd,
             "census_division_id": cd,
         },
