@@ -19,12 +19,15 @@ GROQ_API_BASE=https://api.groq.com/openai/v1
 LLM_BACKEND=groq
 LLM_TEMPERATURE=
 LLM_PROVIDER=groq
+BITNET_API_KEY=bitnet-local
 BITNET_API_BASE=http://127.0.0.1:8080/v1
-BITNET_MODEL=bitnet-b1.58-2B-4T
+BITNET_MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens
 STRICT_DATA_MODE=true
 STATCAN_CACHE_DIR=./data/statcan_cache
 MODEL_PATH=./models/grid_strain_model.pkl
 ```
+
+`LLM_BACKEND` currently supports `groq` and `bitnet`. Keep the BitNet server bound to localhost and point `BITNET_API_BASE` at its OpenAI-compatible `/v1` base URL.
 
 Geocoding order is:
 

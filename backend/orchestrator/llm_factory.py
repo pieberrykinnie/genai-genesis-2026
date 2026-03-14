@@ -45,9 +45,31 @@ def _build_groq_llm(config: LLMFactoryConfig) -> Any:
     )
 
 
+def _build_bitnet_llm(config: LLMFactoryConfig) -> Any:
+    model_name = _require_non_empty(config.model_name, "BITNET_MODEL")
+    api_base = _require_non_empty(config.api_base, "BITNET_API_BASE")
+    api_key = (config.api_key or "bitnet-local").strip() or "bitnet-local"
+    return rt.llm.OpenAICompatibleProvider(
+        model_name=model_name,
+        api_key=api_key,
+        api_base=api_base,
+        temperature=config.temperature,
+    )
+
+
 def _to_factory_config(settings: Settings) -> LLMFactoryConfig:
+    backend = settings.llm_backend.strip().lower()
+    if backend == "bitnet":
+        return LLMFactoryConfig(
+            backend=backend,
+            api_key=settings.bitnet_api_key,
+            model_name=settings.bitnet_model,
+            api_base=settings.bitnet_api_base,
+            temperature=settings.llm_temperature,
+        )
+
     return LLMFactoryConfig(
-        backend=settings.llm_backend,
+        backend=backend,
         api_key=settings.groq_api_key,
         model_name=settings.groq_model,
         api_base=settings.groq_api_base,
@@ -56,6 +78,7 @@ def _to_factory_config(settings: Settings) -> LLMFactoryConfig:
 
 
 _BUILDERS: dict[str, Callable[[LLMFactoryConfig], Any]] = {
+    "bitnet": _build_bitnet_llm,
     "groq": _build_groq_llm,
 }
 

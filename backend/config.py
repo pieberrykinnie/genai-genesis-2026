@@ -26,8 +26,9 @@ class Settings(BaseSettings):
     llm_backend: str = "groq"
     llm_temperature: float | None = None
     llm_provider: str = "groq"
+    bitnet_api_key: str = "bitnet-local"
     bitnet_api_base: str = "http://127.0.0.1:8080/v1"
-    bitnet_model: str = "bitnet-b1.58-2B-4T"
+    bitnet_model: str = "HF1BitLLM/Llama3-8B-1.58-100B-tokens"
 
     data_dir: Path = BASE_DIR / "data"
     models_dir: Path = BASE_DIR / "models"

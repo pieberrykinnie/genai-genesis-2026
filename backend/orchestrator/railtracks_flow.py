@@ -202,8 +202,16 @@ async def _write_memo(
         "railtacks_verification_passed": False,
     }
     settings = get_settings()
-    api_key = (settings.groq_api_key or "").strip()
-    if not api_key or api_key.startswith("test-"):
+    llm_backend = settings.llm_backend.strip().lower()
+    if llm_backend == "groq":
+        api_key = (settings.groq_api_key or "").strip()
+        llm_ready = bool(api_key) and not api_key.startswith("test-")
+    elif llm_backend == "bitnet":
+        llm_ready = bool(settings.bitnet_api_base.strip()) and bool(settings.bitnet_model.strip())
+    else:
+        llm_ready = False
+
+    if not llm_ready:
         return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
 
     try:
