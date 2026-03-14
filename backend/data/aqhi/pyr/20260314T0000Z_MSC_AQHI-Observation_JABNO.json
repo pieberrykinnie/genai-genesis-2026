@@ -1,0 +1,22 @@
+{
+	"type": "Feature",
+	"id": "AQ_OBS-JABNO-20260314000000",
+	"geometry": {
+		"type": "Point",
+		"coordinates": [-122.25,49.0583333333333]
+	},
+	"properties": {
+		"id": "AQ_OBS-JABNO-20260314000000",
+		"aqhi_type": "AQHI-Observation",
+		"observation_type": "original",
+		"location_name_en": "Central Fraser Valley",
+		"location_name_fr": "Bas-Fraser - centre",
+		"location_id": "JABNO",
+		"observation_datetime": "2026-03-14T00:00:00Z",
+		"observation_datetime_text_en": "5:00 PM PDT Friday 13 March 2026",
+		"observation_datetime_text_fr": "5h00 PM HAP vendredi 13 mars 2026",
+		"aqhi": 2.35,
+		"special_notes_en": "",
+		"special_notes_fr": ""
+	}
+ }

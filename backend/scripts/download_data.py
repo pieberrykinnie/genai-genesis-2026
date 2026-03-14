@@ -56,11 +56,6 @@ DEFAULT_DATASETS = [
         "dataset": "hfed_api_guide",
         "url": "https://www.canadaenergyregulator.ca/en/data-analysis/canada-energy-future/canadian-centre-energy-information/canadian-centre-energy-information-open-data-user-guide.html",
     },
-    {
-        "source": "eccc",
-        "dataset": "aqhi_feed_listing",
-        "url": "https://dd.weather.gc.ca/air_quality/aqhi/observation/realtime/json/",
-    },
 ]
 
 

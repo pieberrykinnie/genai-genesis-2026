@@ -1,0 +1,22 @@
+{
+	"type": "Feature",
+	"id": "AQ_OBS-GADMZ-20260314000000",
+	"geometry": {
+		"type": "Point",
+		"coordinates": [-99.9522222222222,49.8469444444444]
+	},
+	"properties": {
+		"id": "AQ_OBS-GADMZ-20260314000000",
+		"aqhi_type": "AQHI-Observation",
+		"observation_type": "original",
+		"location_name_en": "Brandon",
+		"location_name_fr": "Brandon",
+		"location_id": "GADMZ",
+		"observation_datetime": "2026-03-14T00:00:00Z",
+		"observation_datetime_text_en": "7:00 PM CDT Friday 13 March 2026",
+		"observation_datetime_text_fr": "7h00 PM HAC vendredi 13 mars 2026",
+		"aqhi": 2.04,
+		"special_notes_en": "",
+		"special_notes_fr": ""
+	}
+ }

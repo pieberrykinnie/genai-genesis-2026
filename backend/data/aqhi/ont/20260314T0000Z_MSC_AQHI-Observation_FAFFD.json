@@ -1,0 +1,22 @@
+{
+	"type": "Feature",
+	"id": "AQ_OBS-FAFFD-20260314000000",
+	"geometry": {
+		"type": "Point",
+		"coordinates": [-79.6769699,44.37124]
+	},
+	"properties": {
+		"id": "AQ_OBS-FAFFD-20260314000000",
+		"aqhi_type": "AQHI-Observation",
+		"observation_type": "original",
+		"location_name_en": "Barrie",
+		"location_name_fr": "Barrie",
+		"location_id": "FAFFD",
+		"observation_datetime": "2026-03-14T00:00:00Z",
+		"observation_datetime_text_en": "8:00 PM EDT Friday 13 March 2026",
+		"observation_datetime_text_fr": "8h00 PM HAE vendredi 13 mars 2026",
+		"aqhi": 2.33,
+		"special_notes_en": "",
+		"special_notes_fr": ""
+	}
+ }
