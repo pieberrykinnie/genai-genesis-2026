@@ -24,7 +24,7 @@ class TrainConfig:
 
 
 def _load_ieso(path: Path, province: str = "ON") -> pd.DataFrame:
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, comment="\\")
     demand_col = next((c for c in df.columns if "Ontario Demand" in c), None)
     if demand_col is None:
         demand_col = next((c for c in df.columns if "Demand" in c), None)
