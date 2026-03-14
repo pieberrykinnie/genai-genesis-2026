@@ -26,5 +26,17 @@ MODEL_PATH=./models/grid_strain_model.pkl
 ## Data + ML Scripts
 
 - `uv run python scripts/download_data.py`
-- `uv run python scripts/load_census_to_sqlite.py --db ./data/census_csd.db --census-csv ./data/98-10-0001-01.csv --water-csv ./data/38-10-0250-01.csv`
+- `uv run python scripts/load_census_to_sqlite.py --db ./data/census_csd.db --census-csv ./data/98-10-0001-01.zip --water-csv ./data/38-10-0250-01.zip`
+- `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl`
+
+## IESO Playwright Downloader (for anti-bot pages)
+
+If direct script download returns HTML interstitial pages for IESO files:
+
+1. `uv sync`
+2. `uv run playwright install chromium`
+3. `uv run python scripts/download_ieso_playwright.py --start-year 2020 --end-year 2025 --out-dir ./data`
+
+Then retrain:
+
 - `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl`
