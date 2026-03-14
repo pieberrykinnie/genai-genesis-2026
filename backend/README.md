@@ -45,6 +45,16 @@ Geocoding order is:
 - `uv run python scripts/load_census_to_sqlite.py --db ./data/census_csd.db --census-csv ./data/98-10-0001-01.zip --water-csv ./data/38-10-0250-01.zip`
 - `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl`
 - `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl --allow-synthetic` (explicit opt-in only)
+- `uv run python scripts/evaluate_railtracks_workflow.py --skip-judge`
+- `uv run python scripts/evaluate_railtracks_workflow.py` (requires Groq key for JudgeEvaluator)
+
+## Railtracks Viz (Windows)
+
+Use UTF-8 console encoding to avoid emoji encoding crashes:
+
+```bash
+cmd /c "set PYTHONIOENCODING=utf-8 && uv run railtracks viz"
+```
 
 ## IESO Playwright Downloader (for anti-bot pages)
 

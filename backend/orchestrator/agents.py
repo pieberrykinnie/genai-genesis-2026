@@ -21,6 +21,20 @@ class MemoInput(BaseModel):
     policy_decision: PolicyDecision
     clause_text: dict[str, str]
 
+
+class MemoVerificationInput(BaseModel):
+    proposal: ProposalInput
+    evidence_pack: dict
+    policy_decision: PolicyDecision
+    memo: CouncilMemo
+    clause_text: dict[str, str]
+
+
+class MemoVerificationResult(BaseModel):
+    passed: bool
+    issues: list[str] = []
+
+
 MemoWriterAgent = rt.agent_node(
     name="MemoWriterAgent",
     llm=make_railtracks_llm(),
@@ -32,4 +46,18 @@ MemoWriterAgent = rt.agent_node(
         "Do not invent policy clauses. "
         "Explain trade-offs in plain language for council members."
     )
+)
+
+
+MemoGroundingVerifierAgent = rt.agent_node(
+    name="MemoGroundingVerifierAgent",
+    llm=make_railtracks_llm(),
+    output_schema=MemoVerificationResult,
+    system_message=(
+        "You are a strict memo verifier. "
+        "Validate the memo against proposal, evidence_pack, and policy_decision. "
+        "Fail if memo invents numbers, conflicts with recommendation, or misaligns clause narratives. "
+        "Return passed=true only when all checks pass. "
+        "Return concise actionable issues."
+    ),
 )

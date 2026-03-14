@@ -44,6 +44,7 @@ export interface ImpactAssessment {
     sociological_score: string;
     nearest_first_nation_km: number;
     air_quality_baseline: string;
+    estimated_noise_radius_m?: number | null;
   };
   grid_strain: {
     strain_probability: number;

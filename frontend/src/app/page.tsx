@@ -235,6 +235,14 @@ export default function Home() {
                 <RiskChip label="Grid" value={assessment.environmental.grid_score} />
                 <RiskChip label="Water Share" value={`${assessment.environmental.pct_of_municipal_daily_supply.toFixed(2)}%`} />
                 <RiskChip label="AQHI" value={assessment.sociological.air_quality_baseline} />
+                <RiskChip
+                  label="Noise Radius"
+                  value={
+                    typeof assessment.sociological.estimated_noise_radius_m === "number"
+                      ? `${assessment.sociological.estimated_noise_radius_m.toFixed(0)} m`
+                      : "unavailable"
+                  }
+                />
               </div>
             )}
           </Card>
@@ -343,10 +351,11 @@ function LocationMap({ assessment }: { assessment: ImpactAssessment | null }) {
   }
 
   const { lng, lat } = assessment.location;
+  const noiseRadiusM = assessment.sociological.estimated_noise_radius_m;
 
   return (
     <div className="map-shell overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-      <LocationContextMap lat={lat} lng={lng} apiKey={MAPTILER_KEY} />
+      <LocationContextMap lat={lat} lng={lng} apiKey={MAPTILER_KEY} noiseRadiusM={noiseRadiusM} />
       <div className="border-t border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700">
         {assessment.location.municipality}, {assessment.location.province} | lat {lat.toFixed(4)}, lng {lng.toFixed(4)}
       </div>

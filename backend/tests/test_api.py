@@ -46,10 +46,16 @@ def test_assess_contract() -> None:
     assert "data_freshness" in payload
     assert payload["grid_strain"]["model_version"]
     assert payload["methodology"]["assessment_mode"] == "hybrid-live-and-fallback"
+    assert payload["sociological"]["estimated_noise_radius_m"] is not None
+    assert payload["sociological"]["estimated_noise_radius_m"] >= 0
+    assert "railtacks_used" in payload["methodology"]
+    assert "railtacks_workflow" in payload["methodology"]
+    assert "railtacks_verification_passed" in payload["methodology"]
 
 
 def test_assess_stream_has_complete() -> None:
     with client.stream("POST", "/api/assess/stream", json=_sample_payload()) as resp:
         assert resp.status_code == 200
         body = "".join(resp.iter_text())
+    assert '"stage": "railtracks_workflow"' in body
     assert '"stage": "complete"' in body

@@ -174,43 +174,100 @@ async def _write_memo(
     environmental: EnvironmentalImpact,
     economic: EconomicImpact,
     sociological: SociologicalImpact,
-) -> CouncilMemo:
+) -> tuple[CouncilMemo, dict[str, Any]]:
+    railtracks_meta: dict[str, Any] = {
+        "railtacks_used": False,
+        "railtacks_workflow": "council_decision_workflow_v1",
+        "railtacks_verification_passed": False,
+    }
     settings = get_settings()
     api_key = (settings.groq_api_key or "").strip()
     if not api_key or api_key.startswith("test-"):
-        return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score)
+        return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
 
     try:
         import railtracks as rt
 
-        from orchestrator.agents import MemoInput, MemoWriterAgent
-        from orchestrator.validators import validate_memo
+        from orchestrator.agents import MemoGroundingVerifierAgent, MemoInput, MemoVerificationInput, MemoWriterAgent
+        from orchestrator.validators import validate_memo_grounding
 
-        memo = await rt.call(
-            MemoWriterAgent,
-            MemoInput(
-                proposal=proposal,
-                evidence_pack=evidence_pack,
-                policy_decision=policy,
-                clause_text={clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids},
-            ),
-        )
-        ok, errors = validate_memo(memo, evidence_pack, policy)
-        if ok:
-            return memo
-        evidence_with_errors = {**evidence_pack, "validation_errors": errors}
-        memo = await rt.call(
-            MemoWriterAgent,
-            MemoInput(
-                proposal=proposal,
-                evidence_pack=evidence_with_errors,
-                policy_decision=policy,
-                clause_text={clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids},
-            ),
-        )
-        return memo
+        clause_text = {clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids}
+
+        @rt.session(name="council_decision_workflow", save_state=True)
+        async def _run_workflow() -> dict[str, Any]:
+            rt.context.update(
+                {
+                    "proposal": proposal.model_dump(mode="python"),
+                    "evidence_pack": evidence_pack,
+                    "policy_decision": policy.model_dump(mode="python"),
+                }
+            )
+
+            draft = await rt.call(
+                MemoWriterAgent,
+                MemoInput(
+                    proposal=proposal,
+                    evidence_pack=evidence_pack,
+                    policy_decision=policy,
+                    clause_text=clause_text,
+                ),
+            )
+            deterministic_ok, deterministic_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
+            verifier = await rt.call(
+                MemoGroundingVerifierAgent,
+                MemoVerificationInput(
+                    proposal=proposal,
+                    evidence_pack=evidence_pack,
+                    policy_decision=policy,
+                    memo=draft,
+                    clause_text=clause_text,
+                ),
+            )
+
+            issues = list(deterministic_errors)
+            issues.extend(verifier.issues)
+            if deterministic_ok and verifier.passed:
+                return {
+                    "memo": draft.model_dump(mode="python"),
+                    "verification_passed": True,
+                    "issues": [],
+                }
+
+            evidence_with_errors = {**evidence_pack, "validation_errors": issues}
+            repaired = await rt.call(
+                MemoWriterAgent,
+                MemoInput(
+                    proposal=proposal,
+                    evidence_pack=evidence_with_errors,
+                    policy_decision=policy,
+                    clause_text=clause_text,
+                ),
+            )
+            repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
+            repaired_verifier = await rt.call(
+                MemoGroundingVerifierAgent,
+                MemoVerificationInput(
+                    proposal=proposal,
+                    evidence_pack=evidence_pack,
+                    policy_decision=policy,
+                    memo=repaired,
+                    clause_text=clause_text,
+                ),
+            )
+            repaired_issues = list(repaired_errors)
+            repaired_issues.extend(repaired_verifier.issues)
+            return {
+                "memo": repaired.model_dump(mode="python"),
+                "verification_passed": bool(repaired_ok and repaired_verifier.passed),
+                "issues": repaired_issues,
+            }
+
+        workflow_result, _session = await _run_workflow()
+        railtracks_meta["railtacks_used"] = True
+        railtracks_meta["railtacks_verification_passed"] = bool(workflow_result.get("verification_passed", False))
+        return CouncilMemo(**workflow_result["memo"]), railtracks_meta
     except Exception:
-        return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score)
+        return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
 
 
 async def assess_flow(
@@ -317,6 +374,7 @@ async def assess_flow(
         nearest_first_nation_km=nearest_first_nation_km,
         air_quality_baseline=str(public_context["aqhi_label"]),
         residential_population_in_noise_zone=residential_population_in_noise_zone,
+        estimated_noise_radius_m=round(noise_radius_m, 2),
     )
 
     await _emit(progress_callback, "running_site_fit_model", 80)
@@ -359,8 +417,9 @@ async def assess_flow(
     await _emit(progress_callback, "selecting_policy", 88)
     policy = select_policy(evidence_pack)
 
+    await _emit(progress_callback, "railtracks_workflow", 92)
     await _emit(progress_callback, "writing_memo", 94)
-    memo = await _write_memo(proposal, evidence_pack, policy, overall_score, environmental, economic, sociological)
+    memo, railtracks_meta = await _write_memo(proposal, evidence_pack, policy, overall_score, environmental, economic, sociological)
 
     report_narrative = "\n\n".join(
         [
@@ -395,5 +454,8 @@ async def assess_flow(
             "site_fit_model": site_fit.model_version,
             "carbon_source": freshness.get("grid_carbon_source", freshness.get("electricity_maps", "unknown")),
             "municipal_water_source": freshness.get("statcan_water", "fallback_population_estimate"),
+            "railtacks_used": railtracks_meta["railtacks_used"],
+            "railtacks_workflow": railtracks_meta["railtacks_workflow"],
+            "railtacks_verification_passed": railtracks_meta["railtacks_verification_passed"],
         },
     )
