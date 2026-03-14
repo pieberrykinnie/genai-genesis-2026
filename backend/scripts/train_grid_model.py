@@ -20,6 +20,7 @@ except Exception:  # pragma: no cover - fallback for environments without xgboos
 class TrainConfig:
     data_dir: Path
     model_out: Path
+    allow_synthetic: bool = False
 
 
 def _load_ieso(path: Path, province: str = "ON") -> pd.DataFrame:
@@ -53,22 +54,41 @@ def _load_aeso(path: Path, province: str = "AB") -> pd.DataFrame:
     return out.dropna(subset=["demand_mw"])
 
 
-def _build_dataset(data_dir: Path) -> tuple[pd.DataFrame, bool]:
+def _build_dataset(data_dir: Path, *, allow_synthetic: bool = False) -> tuple[pd.DataFrame, bool]:
     frames: list[pd.DataFrame] = []
 
-    for path in sorted(data_dir.glob("*ieso*Demand*.csv")) + sorted(data_dir.glob("*PUB_Demand*.csv")):
-        try:
-            frames.append(_load_ieso(path))
-        except Exception:
-            continue
+    ieso_patterns = ["*ieso*Demand*.csv", "*PUB_Demand*.csv"]
+    aeso_patterns = ["*aeso*.csv"]
 
-    for path in sorted(data_dir.glob("*aeso*.csv")):
-        try:
-            frames.append(_load_aeso(path))
-        except Exception:
-            continue
+    for pattern in ieso_patterns:
+        matches = sorted(data_dir.glob(pattern))
+        print(f"  glob '{pattern}': {len(matches)} file(s)")
+        for path in matches:
+            try:
+                frames.append(_load_ieso(path))
+            except Exception as exc:
+                print(f"  WARNING: skipping {path.name}: {exc}")
+                continue
+
+    for pattern in aeso_patterns:
+        matches = sorted(data_dir.glob(pattern))
+        print(f"  glob '{pattern}': {len(matches)} file(s)")
+        for path in matches:
+            try:
+                frames.append(_load_aeso(path))
+            except Exception as exc:
+                print(f"  WARNING: skipping {path.name}: {exc}")
+                continue
 
     if not frames:
+        all_patterns = ieso_patterns + aeso_patterns
+        if not allow_synthetic:
+            raise FileNotFoundError(
+                f"No IESO/AESO CSV files found in {data_dir}. "
+                f"Searched patterns: {all_patterns}. "
+                f"Pass --allow-synthetic to train on generated data instead."
+            )
+        print("WARNING: No real IESO/AESO CSVs found — generating synthetic fallback data.")
         rng = np.random.default_rng(42)
         n = 5000
         province = rng.choice(["ON", "AB"], n)
@@ -81,6 +101,7 @@ def _build_dataset(data_dir: Path) -> tuple[pd.DataFrame, bool]:
         hour = rng.integers(1, 25, n)
         return pd.DataFrame({"province": province, "demand_mw": demand, "month": month, "hour": hour}), True
 
+    print(f"  Loaded {len(frames)} file(s), {sum(len(f) for f in frames)} total rows.")
     return pd.concat(frames, ignore_index=True), False
 
 
@@ -111,7 +132,7 @@ def _feature_engineer(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def train(config: TrainConfig) -> None:
-    raw, used_synthetic = _build_dataset(config.data_dir)
+    raw, used_synthetic = _build_dataset(config.data_dir, allow_synthetic=config.allow_synthetic)
     feat = _feature_engineer(raw)
 
     if used_synthetic:
@@ -186,9 +207,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train ON/AB grid strain model.")
     parser.add_argument("--data-dir", type=Path, default=Path("./data"))
     parser.add_argument("--model-out", type=Path, default=Path("./models/grid_strain_model.pkl"))
+    parser.add_argument(
+        "--allow-synthetic",
+        action="store_true",
+        help="Allow training on synthetic data when no real CSVs are found.",
+    )
     args = parser.parse_args()
 
-    train(TrainConfig(data_dir=args.data_dir, model_out=args.model_out))
+    train(TrainConfig(data_dir=args.data_dir, model_out=args.model_out, allow_synthetic=args.allow_synthetic))
 
 
 if __name__ == "__main__":

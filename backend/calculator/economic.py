@@ -26,7 +26,7 @@ def calc_fiscal(
 
     annual_energy_kwh = it_load_mw * 1000.0 * 8760.0 * pue
     demand_increase_factor = min(0.25, it_load_mw / 8000.0)
-    province_rate = AUX_ELECTRICITY_RATE_PER_KWH_CAD.get(province, 0.16)
+    province_rate = AUX_ELECTRICITY_RATE_PER_KWH_CAD[province]
     household_annual_increase = province_rate * demand_increase_factor * 9000.0 * 0.30
 
     infra_cost_10yr = capex_cad * 0.08 + annual_energy_kwh * 0.002

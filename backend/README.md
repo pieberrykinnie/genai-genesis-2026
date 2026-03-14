@@ -25,9 +25,11 @@ MODEL_PATH=./models/grid_strain_model.pkl
 
 ## Data + ML Scripts
 
-- `uv run python scripts/download_data.py`
+All scripts exit non-zero on failure (missing data, unrecognised formats, download errors).
+
+- `uv run python scripts/download_data.py` — pass `--strict` to abort on the first download failure
 - `uv run python scripts/load_census_to_sqlite.py --db ./data/census_csd.db --census-csv ./data/98-10-0001-01.zip --water-csv ./data/38-10-0250-01.zip`
-- `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl`
+- `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl` — requires real CSVs; pass `--allow-synthetic` to train on generated data when no CSVs are found
 
 ## IESO Playwright Downloader (for anti-bot pages)
 

@@ -23,7 +23,7 @@ def calc_water_use(
 ) -> tuple[float, float, float, float, str]:
     it_load_kw = it_load_mw * 1000.0
     direct_l_day = it_load_kw * 24.0 * pue * wue
-    grid_water_intensity = PROVINCIAL_GRID_WATER_INTENSITY_L_PER_KWH.get(province, 1.5)
+    grid_water_intensity = PROVINCIAL_GRID_WATER_INTENSITY_L_PER_KWH[province]
     indirect_l_day = it_load_kw * 24.0 * pue * grid_water_intensity
     total_l_day = direct_l_day + indirect_l_day
     pct_supply = 0.0

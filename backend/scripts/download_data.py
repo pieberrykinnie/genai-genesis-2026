@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -133,9 +134,10 @@ def _error_status(exc: Exception) -> str:
     return exc.__class__.__name__
 
 
-def run(data_dir: Path, manifest_path: Path) -> None:
+def run(data_dir: Path, manifest_path: Path, *, strict: bool = False) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    failures: list[dict[str, str]] = []
 
     for entry in DEFAULT_DATASETS:
         years = entry.get("years")
@@ -157,6 +159,25 @@ def run(data_dir: Path, manifest_path: Path) -> None:
                     checksum = ""
                     size = 0
                     fallback_used = True
+                    failures.append({"dataset": dataset, "url": url, "error": status})
+                    if strict:
+                        _write_manifest_row(
+                            manifest_path,
+                            {
+                                "source": entry["source"],
+                                "dataset": dataset,
+                                "url": url,
+                                "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                                "last_updated": datetime.now(timezone.utc).date().isoformat(),
+                                "status": status,
+                                "bytes": 0,
+                                "checksum_sha256": "",
+                                "fallback_used": True,
+                            },
+                        )
+                        raise RuntimeError(
+                            f"--strict: aborting on first failure: {dataset} ({url}): {status}"
+                        ) from exc
 
                 _write_manifest_row(
                     manifest_path,
@@ -195,6 +216,27 @@ def run(data_dir: Path, manifest_path: Path) -> None:
             size = 0
             fallback_used = True
 
+        if fallback_used:
+            failures.append({"dataset": str(entry["dataset"]), "url": used_url, "error": status})
+            if strict:
+                _write_manifest_row(
+                    manifest_path,
+                    {
+                        "source": entry["source"],
+                        "dataset": entry["dataset"],
+                        "url": used_url,
+                        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                        "last_updated": datetime.now(timezone.utc).date().isoformat(),
+                        "status": status,
+                        "bytes": 0,
+                        "checksum_sha256": "",
+                        "fallback_used": True,
+                    },
+                )
+                raise RuntimeError(
+                    f"--strict: aborting on first failure: {entry['dataset']} ({used_url}): {status}"
+                )
+
         _write_manifest_row(
             manifest_path,
             {
@@ -210,13 +252,24 @@ def run(data_dir: Path, manifest_path: Path) -> None:
             },
         )
 
+    if failures:
+        print(f"\nERROR: {len(failures)} download(s) failed:", file=sys.stderr)
+        for f in failures:
+            print(f"  - {f['dataset']}: {f['error']} ({f['url']})", file=sys.stderr)
+        sys.exit(1)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download source datasets and write a manifest log.")
     parser.add_argument("--data-dir", type=Path, default=Path("./data"))
     parser.add_argument("--manifest", type=Path, default=Path("./data/ingestion_manifest.jsonl"))
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Abort immediately on the first download failure.",
+    )
     args = parser.parse_args()
-    run(args.data_dir, args.manifest)
+    run(args.data_dir, args.manifest, strict=args.strict)
     print(f"Manifest written to {args.manifest}")
 
 
