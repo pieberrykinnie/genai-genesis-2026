@@ -1,12 +1,9 @@
-from __future__ import annotations
-
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from config import get_settings
-from models import DataCentreProposal
-from services.assessment import assess_proposal, stream_assessment_events
+from backend.orchestrator.railtracks_flow import assess_flow
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
@@ -27,10 +24,21 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/api/assess")
-async def api_assess(payload: DataCentreProposal):
-    return await assess_proposal(payload)
+async def api_assess(payload: dict):
+    # Runs the Railtracks flow and returns structured output
+    return await assess_flow(payload)
 
 
 @app.post("/api/assess/stream")
-async def api_assess_stream(payload: DataCentreProposal):
-    return StreamingResponse(stream_assessment_events(payload), media_type="text/event-stream")
+async def api_assess_stream(payload: dict):
+    # Placeholder: hook into Railtracks session broadcast
+    async def event_generator():
+        yield 'data: {"stage": "started"}\n\n'
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/extract-proposal")
+async def api_extract_proposal(file: UploadFile = File(...)):
+    # Placeholder: save file, extract text via backend.ingestion.pdf_extract 
+    # and pass to ProposalExtractionAgent
+    return {"status": "not_implemented"}
