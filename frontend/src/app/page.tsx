@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import Image from "next/image";
 
 import type { DataCentreProposal, ImpactAssessment, StreamEvent } from "@/types/assessment";
 
@@ -346,7 +347,7 @@ function LocationMap({ assessment }: { assessment: ImpactAssessment | null }) {
   return (
     <div className="map-shell overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
       {src ? (
-        <img src={src} alt="Site map" className="h-full w-full object-cover" />
+        <Image src={src} alt="Site map" width={900} height={420} unoptimized className="h-full w-full object-cover" />
       ) : (
         <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#bbf7d0_0%,#e2e8f0_70%)] p-4 text-center text-sm text-slate-600">
           Map key missing. Set <code className="mx-1 rounded bg-white px-1">NEXT_PUBLIC_MAPTILER_API_KEY</code> to render static map tiles.
