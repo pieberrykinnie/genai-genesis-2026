@@ -1,9 +1,9 @@
 import railtracks as rt
 from models import ProposalInput, ImpactAssessment, CouncilMemo
-from backend.orchestrator.agents import MemoWriterAgent, MemoInput
-from backend.orchestrator.validators import validate_memo
-from backend.policy.clause_catalog import CLAUSE_CATALOG
-from backend.policy.engine import select_policy
+from orchestrator.agents import MemoWriterAgent, MemoInput
+from orchestrator.validators import validate_memo
+from policy.clause_catalog import CLAUSE_CATALOG
+from policy.engine import select_policy
 # Imports below are placeholders depending on project ingestion details 
 # and actual implemented calculators, they mock the spec flow
 # from ingestion.proposal_normalize import ingest_or_extract

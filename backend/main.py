@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from config import get_settings
-from backend.orchestrator.railtracks_flow import assess_flow
+from orchestrator.railtracks_flow import assess_flow
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
