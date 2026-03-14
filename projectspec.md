@@ -14,6 +14,14 @@
 
 **The pitch frame (important for demo):** The era of vague job promises and secret NDAs is over. City councils face intense public backlash over strained grids, water depletion, and spiked utility bills. DataSite shifts the power dynamic. It arms municipalities to stress-test data center proposals and generates a legally actionable Community Benefit Agreement (CBA) playbook—dictating the exact water replenishment targets, local hiring minimums, and grid infrastructure costs the developer must legally commit to before a single shovel hits the dirt.
 
+**The three AI techniques (tell judges all three):**
+1. Deterministic calculation engine — real formulas from published benchmarks applied
+   to real Canadian datasets
+2. XGBoost ML model — trained on real IESO/AESO historical grid data to predict
+   grid strain probability from a proposed load addition
+3. Groq LLM — grounded report + negotiation playbook generation, citing only
+   numbers produced by layers 1 and 2
+
 ---
 
 ## 1. Tech Stack

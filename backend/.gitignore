@@ -144,6 +144,14 @@ ENV/
 env.bak/
 venv.bak/
 
+# Project datasets and artifacts
+data/*.csv
+data/*.zip
+data/*.json
+data/*.jsonl
+data/*.db
+models/*.pkl
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -205,3 +213,5 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+.railtracks/
