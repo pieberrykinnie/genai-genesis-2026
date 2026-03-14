@@ -346,13 +346,7 @@ function LocationMap({ assessment }: { assessment: ImpactAssessment | null }) {
 
   return (
     <div className="map-shell overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-      {MAPTILER_KEY ? (
-        <LocationContextMap lat={lat} lng={lng} apiKey={MAPTILER_KEY} />
-      ) : (
-        <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#bbf7d0_0%,#e2e8f0_70%)] p-4 text-center text-sm text-slate-600">
-          Map key missing. Set <code className="mx-1 rounded bg-white px-1">NEXT_PUBLIC_MAPTILER_API_KEY</code> to render client-side tiles.
-        </div>
-      )}
+      <LocationContextMap lat={lat} lng={lng} apiKey={MAPTILER_KEY} />
       <div className="border-t border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700">
         {assessment.location.municipality}, {assessment.location.province} | lat {lat.toFixed(4)}, lng {lng.toFixed(4)}
       </div>

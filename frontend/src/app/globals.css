@@ -96,7 +96,13 @@ pre {
 }
 
 .map-shell {
-  min-height: 260px;
+  height: 300px;
+}
+
+@media (min-width: 768px) {
+  .map-shell {
+    height: 340px;
+  }
 }
 
 .leaflet-container {

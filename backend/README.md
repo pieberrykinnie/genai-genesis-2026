@@ -12,6 +12,7 @@ uv run fastapi dev main.py
 ```bash
 ELECTRICITY_MAPS_API_KEY=
 MAPTILER_API_KEY=
+NOMINATIM_USER_AGENT=genai-genesis-2026/1.0 (local-dev)
 GROQ_API_KEY=
 GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_API_BASE=https://api.groq.com/openai/v1

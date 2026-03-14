@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     electricity_maps_api_key: str | None = None
     maptiler_api_key: str | None = None
+    nominatim_user_agent: str = "genai-genesis-2026/1.0 (local-dev)"
     groq_api_key: str | None = None
     groq_model: str = "llama-3.3-70b-versatile"
     groq_api_base: str = "https://api.groq.com/openai/v1"

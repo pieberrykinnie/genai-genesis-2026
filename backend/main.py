@@ -1,11 +1,12 @@
 import asyncio
 import json
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from config import get_settings
+from data_sources import GeocodingUnavailableError
 from orchestrator.railtracks_flow import assess_flow
 
 settings = get_settings()
@@ -29,7 +30,13 @@ async def health() -> dict[str, str]:
 @app.post("/api/assess")
 async def api_assess(payload: dict):
     # Runs the Railtracks flow and returns structured output
-    return await assess_flow(payload)
+    try:
+        return await assess_flow(payload)
+    except GeocodingUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "geocoding_unavailable", "message": f"Unable to geocode address: {exc}"},
+        ) from exc
 
 
 @app.post("/api/assess/stream")
