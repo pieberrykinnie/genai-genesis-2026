@@ -18,6 +18,7 @@ import {
   FileTextIcon,
   LayoutDashboardIcon,
   BarChart3Icon,
+  FolderOpenIcon,
 } from "lucide-react"
 
 const data = {
@@ -36,6 +37,11 @@ const data = {
       title: "New proposal",
       url: "/dashboard/new-proposal",
       icon: <FileTextIcon />,
+    },
+    {
+      title: "Proposals",
+      url: "/dashboard/proposals",
+      icon: <FolderOpenIcon />,
     },
     {
       title: "Results",

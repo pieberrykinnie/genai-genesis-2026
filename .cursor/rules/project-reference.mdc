@@ -5,7 +5,14 @@ alwaysApply: true
 
 # Project Reference: DataSite Impact Analyzer
 
-**Full spec:** See `projectspec.md` (or equivalent project spec document) for complete API schemas, data sources, calculation formulas, ML training, and pre-hackathon checklist. This rule summarizes the product and points the AI to the right contracts.
+**Single source of truth:** All docs and AI rules must stay aligned. Use these as the canonical set:
+
+- **`projectspec.md`** — Full API schemas, data sources (§3), calculation formulas, ML training, pre-hackathon checklist.
+- **`AGENTS.md`** — Required proposal inputs, optional PDF ingestor, data-source URLs, practical rules.
+- **`projectoverview.md`** — Pitch, user flow, judging criteria, target award (Google Best Sustainability AI Hack).
+- **`README.md`** — Quickstart, backend scripts, branching.
+
+This rule summarizes the product and points the AI to the right contracts.
 
 ---
 
@@ -43,8 +50,8 @@ alwaysApply: true
 **Single main endpoint:** `POST /api/assess` — body = `DataCentreProposal`, response = `ImpactAssessment`.  
 **Streaming:** `POST /api/assess/stream` — SSE events for stages (geocoding, fetching_grid_data, fetching_census_data, running_calculations, running_ml_model, generating_report, complete with result). Response time ~8–15s; frontend should show progress.
 
-**Request shape (align frontend form to this):**  
-Location (address, province), it_load_mw, pue, wue, cooling_type, facility_type, capex_cad (millions), construction_months, optional has_onsite_generation, renewable_ppa.
+**Required proposal inputs (align frontend form and API to this):**  
+`address`, `province` | `it_load_mw`, `pue`, `wue` | `cooling_type`, `facility_type` | `capex_cad` (CAD millions), `construction_months` | `has_onsite_generation`, `renewable_ppa` (optional). See AGENTS.md for the same list.
 
 **Response shape:**  
 Metadata (proposal_id, location, timestamp, data_freshness), three pillars (environmental, economic, sociological), grid_strain (ML output), overall_score (composite RAG), negotiation_playbook (list of strings), report_narrative, raw_inputs_used, calculation_methodology.  
@@ -60,7 +67,11 @@ RAG scores are `"green" | "amber" | "red"` throughout.
 - **Indigenous Services Canada:** Water advisories, First Nations reserve boundaries (GeoJSON); pre-compute reserve centroids.
 - **ECCC / Drought monitor:** Watershed stress; province-level fallback table in spec.
 
-Every source has a documented fallback in the full spec.
+Every source has a documented fallback in the full spec. **URLs and details:** See `projectspec.md` §3 and `AGENTS.md` (Energy+Grid, Community+Demographics, Indigenous, Water/Environmental, optional nearest water).
+
+**Practical rules (from AGENTS.md):** Keep source freshness timestamps in every assessment response. Prefer ON+AB high-fidelity + fallback tables for other provinces. Never block core scoring if one external API is down.
+
+**Optional PDF ingestor (AGENTS.md):** Support parsing a proposal PDF into the same schema (extract → map to fields → validate → confirm low-confidence values). Frontend may add file upload + confirm step later.
 
 ---
 
@@ -73,15 +84,15 @@ Every source has a documented fallback in the full spec.
 
 ## Repository Structure (from Spec)
 
-- `frontend/` — Next.js app; `src/app/page.tsx` (landing + proposal form), `src/app/results/page.tsx` (results dashboard), `src/components/` (ProposalForm, ImpactDashboard, ScoreCard, MapView, ReportViewer), `src/types/assessment.ts` (TypeScript types matching backend models).
-- `backend/` — FastAPI (main.py, models.py), calculator/, data_sources/, ml/, llm/.
+- `frontend/` — Next.js app; `src/app/` (landing, dashboard, new-proposal, results), `src/components/`, `src/types/assessment.ts` (TypeScript types matching backend models).
+- `backend/` — FastAPI (main.py, models.py), calculator/, data_sources/, ml/, llm/. Scripts live under `backend/scripts/` (e.g. download_data.py, load_census_to_sqlite.py, train_grid_model.py).
 - `data/` — Pre-downloaded CSVs, census SQLite, reserves centroids (gitignored except samples).
 - `models/` — grid_strain_model.pkl.
-- `scripts/` — train_grid_model.py, download_data.py, load_census_to_sqlite.py.
 
 ---
 
 ## Judging & Design
 
-- **Judging:** Innovation & originality, technical complexity & execution, product experience & design, impact & practical value.
+- **Judging (projectoverview.md):** (1) Innovation & originality, (2) Technical complexity & execution, (3) Product experience & design, (4) Impact & practical value.
+- **Target award:** Google Best Sustainability AI Hack — most innovative AI solution for environmental/sustainability challenges and real-world impact.
 - **UI contrast:** Show company “Promises” (e.g. soft green) vs “Calculated Reality” (bold charts). Map-first where relevant; minimal, professional for council/planners.

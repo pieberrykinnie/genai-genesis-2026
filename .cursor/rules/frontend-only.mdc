@@ -6,7 +6,12 @@ alwaysApply: false
 
 # Frontend Scope & Standards (DataSite Impact Analyzer)
 
-This rule applies when working under **frontend/** only. Backend (Python, FastAPI, ML, data pipelines) lives outside the frontend. Align all UI and API calls with the project spec (projectspec.md) and the API contract below.
+This rule applies when working under **frontend/** only. Backend (Python, FastAPI, ML, data pipelines) lives outside the frontend. Align all UI and API calls with:
+
+- **`projectspec.md`** — Full API and response schemas (§2), data sources (§3).
+- **`AGENTS.md`** — Required proposal inputs (same as below), optional PDF ingestor, practical rules.
+
+The API contract below matches both.
 
 ---
 
@@ -61,7 +66,7 @@ interface DataCentreProposal {
 
 ## What the Frontend Does
 
-- **Input collection:** Forms and tabs that collect all `DataCentreProposal` fields; address geocoded to lat/lng via MapTiler where needed.
+- **Input collection:** Forms and tabs that collect all `DataCentreProposal` fields (see AGENTS.md “Required Proposal Inputs”); address geocoded to lat/lng via MapTiler where needed. Optional: PDF ingestor path (upload → parse → map to schema → confirm low-confidence values).
 - **Map UX:** MapTiler for pin placement; display noise radius, substation distance, proximity to residential/water when backend or static data provides them.
 - **Call backend:** POST proposal to `/api/assess` or use `/api/assess/stream` and show stage progress (geocoding → grid/census → calculations → ML → report).
 - **Results:** Show environmental, economic, sociological pillars; grid strain (ML); composite RAG; negotiation playbook list; full report narrative. Contrast “Promises” vs “Calculated Reality” in design.

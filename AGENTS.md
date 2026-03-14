@@ -1,5 +1,7 @@
 # AGENTS.md
 
+**See also:** `projectspec.md` (full API, data sources §3, ML), `projectoverview.md` (pitch, judging, award), `README.md` (quickstart), `.cursor/rules/` (project-reference.mdc, frontend-only.mdc).
+
 ## Project Overview
 DataSite Impact Analyzer estimates environmental, economic, grid, and sociological impacts of a proposed Canadian data centre. It combines deterministic formulas, ON/AB ML grid-strain prediction, and optional LLM report generation.
 

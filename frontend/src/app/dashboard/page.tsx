@@ -44,7 +44,7 @@ export default function Page() {
         <PageHeader title="Dashboard" />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-6 px-4 py-6 md:gap-8 md:px-6 md:py-8">
+            <div className="mx-auto w-full max-w-5xl flex flex-col gap-6 px-4 py-6 md:gap-8 md:px-6 md:py-8">
               {/* Hero + primary CTA */}
               <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 via-card to-card">
                 <CardHeader>
@@ -143,12 +143,17 @@ export default function Page() {
                         Your latest impact assessments (placeholder)
                       </CardDescription>
                     </div>
-                    <Button variant="ghost" size="lg" asChild>
-                      <Link href="/dashboard/new-proposal">
-                        New
-                        <ChevronRightIcon className="ml-1 size-4" />
-                      </Link>
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="lg" asChild>
+                        <Link href="/dashboard/proposals">View all</Link>
+                      </Button>
+                      <Button variant="ghost" size="lg" asChild>
+                        <Link href="/dashboard/new-proposal">
+                          New
+                          <ChevronRightIcon className="ml-1 size-4" />
+                        </Link>
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <Table>

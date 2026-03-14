@@ -42,3 +42,7 @@ Google Best Sustainability AI Hack
 1 winner
 Awarded to the team that creates the most innovative AI solution to address environmental or sustainability challenges and drive meaningful real-world impact
 
+---
+
+**See also:** `projectspec.md` (full API, data sources, ML), `AGENTS.md` (required inputs, data URLs, practical rules), `README.md` (quickstart, scripts).
+

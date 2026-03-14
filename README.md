@@ -2,6 +2,13 @@
 
 DataSite Impact Analyzer for GenAI Genesis 2026 (Google Sustainability track).
 
+## Documentation
+
+- **`projectspec.md`** — Full project spec: API, data sources, ML, pre-hackathon checklist.
+- **`AGENTS.md`** — Required inputs, optional PDF ingestor, data-source URLs, practical rules.
+- **`projectoverview.md`** — Pitch, user flow, judging criteria, target award.
+- **`.cursor/rules/`** — AI rules: project-reference.mdc, frontend-only.mdc, shadcn-minimal.mdc.
+
 ## Quickstart
 
 1. Install frontend dependencies:

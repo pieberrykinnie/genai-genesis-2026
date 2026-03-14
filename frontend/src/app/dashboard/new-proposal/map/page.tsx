@@ -29,7 +29,7 @@ export default function MapPickerPage() {
         <PageHeader title="Pick location on map" />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-6 px-4 py-6 md:px-6 md:py-8">
+            <div className="mx-auto w-full max-w-5xl flex flex-col gap-6 px-4 py-6 md:px-6 md:py-8">
               <Card className="max-w-xl">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
