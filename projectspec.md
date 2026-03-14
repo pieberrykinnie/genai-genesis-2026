@@ -1417,3 +1417,70 @@ When asked about the data:
 
 *End of spec. Questions → start with Section 7 (pre-hackathon checklist).*
 *If a data source is down during the hack, every source has a documented fallback.*
+
+---
+
+## 13. Dev Integration Plan (March 2026)
+
+This section records the active integration plan used to move current cycle work onto `dev`.
+
+### 13.1 Branching and Integration
+
+- Base branch is `dev` (direct integration for this cycle).
+- Port only latest-cycle commits from `dev-adi` onto `dev`.
+- Keep frontend and backend changes logically separated in commit history.
+- Retire `dev-adi` (local + remote) after validation and push.
+
+### 13.2 Frontend Workstream (Council/Public UX)
+
+- Replace single-panel UI with a 4-step flow:
+  1. Proposal Intake
+  2. Location Context
+  3. Impact Results
+  4. Decision Brief
+- Keep existing frontend proxy API routes unchanged:
+  - `POST /api/assess`
+  - `POST /api/assess/stream`
+- Add map-first context for site location and risk chips.
+- Use plain-language explanations suitable for common residents and city council users.
+- Add HCI artifacts:
+  - Cognitive walkthrough checklist
+  - Heuristic evaluation checklist
+
+### 13.3 Backend Workstream (Strict Data Integrity, No API Breaks)
+
+- Keep endpoint paths and top-level response contract stable.
+- Critical paths fail explicitly (no silent fabricated values):
+  - Geocoding required in strict mode.
+  - Grid model artifact required for strain inference.
+- Advisory sources may degrade, but must be marked explicitly in `data_freshness`.
+- Standardize freshness labels:
+  - `live:*`
+  - `cached:*`
+  - `static_reference:*`
+  - `unavailable:*`
+- Remove heuristic grid-model fallback from strict runtime path.
+- Keep deterministic report fallback for LLM narrative failures.
+- Add LLM provider adapter so Groq remains supported and BitNet can be selected via config.
+
+### 13.4 Data and Training Script Policy
+
+- `scripts/download_data.py` exits non-zero on source failures by default.
+- `scripts/train_grid_model.py` requires real IESO/AESO data by default.
+- Synthetic training is opt-in only via explicit flag (`--allow-synthetic`).
+
+### 13.5 Validation Gates
+
+- Backend:
+  - `uv run python -m pytest -q` passes.
+  - `/api/assess` contract smoke test passes.
+  - `/api/assess/stream` emits ordered stages and `complete` or explicit `error`.
+- Frontend:
+  - `pnpm lint` passes (warnings documented if non-blocking).
+  - `pnpm build` passes.
+  - End-to-end dashboard flow works against configured `BACKEND_URL`.
+
+### 13.6 Current Fallback Policy (Supersedes Older Generic Fallback Note)
+
+- Critical sources: fail fast with explicit error payloads.
+- Advisory sources: degrade gracefully with explicit `data_freshness` markers.
