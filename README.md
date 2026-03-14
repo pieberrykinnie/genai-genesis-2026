@@ -1,59 +1,47 @@
 # genai-genesis-2026
 
+DataSite Impact Analyzer for GenAI Genesis 2026 (Google Sustainability track).
+
 ## Quickstart
 
-1. Install `pnpm`:
-
-```bash
-# macOS / Linux
-curl -fsSL https://get.pnpm.io/install.sh | sh -
-# Windows
-npx pnpm@latest-10 dlx @pnpm/exe@latest-10 setup
-```
-
-2. Install `uv`:
-
-```bash
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# Windows
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-3. Install frontend dependencies:
+1. Install frontend dependencies:
 
 ```bash
 cd frontend
 pnpm install
 ```
 
-4. Install backend dependencies:
+2. Install backend dependencies:
 
 ```bash
 cd ../backend
 uv sync
 ```
 
-5. Run frontend development server:
+3. Run backend:
+
+```bash
+uv run fastapi dev main.py
+```
+
+4. Run frontend:
 
 ```bash
 cd ../frontend
 pnpm dev
 ```
 
-6. Run backend development server:
+## Backend scripts
 
 ```bash
-cd ../backend
-uv run fastapi dev
+cd backend
+uv run python scripts/download_data.py
+uv run python scripts/load_census_to_sqlite.py --db ./data/census_csd.db --census-csv ./data/98-10-0001-01.csv --water-csv ./data/38-10-0250-01.csv
+uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl
 ```
 
-## Contributing
+## Branching
 
-### Branching
-
-Four layers:
-
-1. `main` stable branch and what we will use in our final submission
-1. `dev` for merging working features
-1. `feat`/`fix`/`docs` branches
+- `main`: stable submission branch
+- `dev`: integration branch
+- `feat/*`, `fix/*`, `docs/*`: working branches
