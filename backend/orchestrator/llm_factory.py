@@ -26,9 +26,16 @@ def _require_non_empty(value: str | None, env_name: str) -> str:
     return value.strip()
 
 
+def _normalize_model_name(model_name: str) -> str:
+    # Support accidental "primary#fallback" config values by taking the right-most model identifier.
+    if "#" in model_name:
+        return model_name.split("#")[-1].strip()
+    return model_name
+
+
 def _build_groq_llm(config: LLMFactoryConfig) -> Any:
     api_key = _require_non_empty(config.api_key, "GROQ_API_KEY")
-    model_name = _require_non_empty(config.model_name, "GROQ_MODEL")
+    model_name = _normalize_model_name(_require_non_empty(config.model_name, "GROQ_MODEL"))
     api_base = _require_non_empty(config.api_base, "GROQ_API_BASE")
     return rt.llm.OpenAICompatibleProvider(
         model_name=model_name,

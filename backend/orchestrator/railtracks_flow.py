@@ -189,7 +189,7 @@ async def _write_memo(
         import railtracks as rt
 
         from orchestrator.agents import MemoGroundingVerifierAgent, MemoWriterAgent
-        from orchestrator.validators import validate_memo_grounding
+        from orchestrator.validators import coerce_council_memo, coerce_verifier_result, validate_memo_grounding
 
         clause_text = {clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids}
 
@@ -201,8 +201,10 @@ async def _write_memo(
             validation_errors: list[str] | None = None,
         ) -> str:
             lines = [
-                "Generate a council memo as structured output.",
+                "Generate a council memo as JSON.",
+                "Return JSON only, no markdown and no extra commentary.",
                 "Use only provided evidence and selected clauses.",
+                "In recommendation_section, include the exact recommendation token from policy_decision.recommendation.",
                 f"Proposal: {proposal_obj.model_dump_json()}",
                 f"Policy decision: {policy_obj.model_dump_json()}",
                 f"Evidence pack: {evidence_obj}",
@@ -221,13 +223,19 @@ async def _write_memo(
         ) -> str:
             return "\n".join(
                 [
-                    "Verify this memo for grounding and policy alignment.",
+                    "Verify this memo for grounding and policy alignment and return JSON.",
+                    "Return JSON only with keys: passed, issues.",
+                    "Allowed failure reasons only:",
+                    "1) invented numeric claims not supported by proposal/evidence",
+                    "2) recommendation text misaligned with policy_decision.recommendation",
+                    "3) clause narratives misaligned with selected_clause_ids.",
+                    "Do not fail for style, verbosity, or omitted non-critical fields.",
                     f"Proposal: {proposal_obj.model_dump_json()}",
                     f"Policy decision: {policy_obj.model_dump_json()}",
                     f"Evidence pack: {evidence_obj}",
                     f"Memo: {memo_obj.model_dump_json()}",
                     f"Clause text map: {clause_obj}",
-                    "Return passed=true only if there are no issues.",
+                    "Set passed=true only if there are no issues.",
                 ]
             )
 
@@ -241,19 +249,29 @@ async def _write_memo(
                 }
             )
 
-            draft = await rt.call(
+            draft_raw = await rt.call(
                 MemoWriterAgent,
                 _memo_writer_prompt(proposal, evidence_pack, policy, clause_text),
             )
-            deterministic_ok, deterministic_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
-            verifier = await rt.call(
-                MemoGroundingVerifierAgent,
-                _memo_verifier_prompt(proposal, evidence_pack, policy, draft, clause_text),
-            )
+            draft, draft_parse_errors = coerce_council_memo(draft_raw)
+            if draft is None:
+                deterministic_ok = False
+                deterministic_errors = list(draft_parse_errors)
+                verifier_passed = False
+                verifier_issues = ["verifier_skipped_due_to_memo_parse_error"]
+                verifier_parse_errors: list[str] = []
+            else:
+                deterministic_ok, deterministic_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
+                verifier_raw = await rt.call(
+                    MemoGroundingVerifierAgent,
+                    _memo_verifier_prompt(proposal, evidence_pack, policy, draft, clause_text),
+                )
+                verifier_passed, verifier_issues, verifier_parse_errors = coerce_verifier_result(verifier_raw)
 
             issues = list(deterministic_errors)
-            issues.extend(verifier.issues)
-            if deterministic_ok and verifier.passed:
+            issues.extend(verifier_issues)
+            issues.extend(verifier_parse_errors)
+            if draft is not None and deterministic_ok and verifier_passed:
                 return {
                     "memo": draft.model_dump(mode="python"),
                     "verification_passed": True,
@@ -261,7 +279,7 @@ async def _write_memo(
                 }
 
             evidence_with_errors = {**evidence_pack, "validation_errors": issues}
-            repaired = await rt.call(
+            repaired_raw = await rt.call(
                 MemoWriterAgent,
                 _memo_writer_prompt(
                     proposal,
@@ -271,16 +289,30 @@ async def _write_memo(
                     validation_errors=issues,
                 ),
             )
+            repaired, repaired_parse_errors = coerce_council_memo(repaired_raw)
+            if repaired is None:
+                return {
+                    "memo": _fallback_memo(
+                        proposal, environmental, economic, sociological, policy, overall_score
+                    ).model_dump(mode="python"),
+                    "verification_passed": False,
+                    "issues": [*issues, *repaired_parse_errors],
+                }
+
             repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
-            repaired_verifier = await rt.call(
+            repaired_verifier_raw = await rt.call(
                 MemoGroundingVerifierAgent,
                 _memo_verifier_prompt(proposal, evidence_pack, policy, repaired, clause_text),
             )
+            repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = coerce_verifier_result(
+                repaired_verifier_raw
+            )
             repaired_issues = list(repaired_errors)
-            repaired_issues.extend(repaired_verifier.issues)
+            repaired_issues.extend(repaired_verifier_issues)
+            repaired_issues.extend(repaired_verifier_parse_errors)
             return {
                 "memo": repaired.model_dump(mode="python"),
-                "verification_passed": bool(repaired_ok and repaired_verifier.passed),
+                "verification_passed": bool(repaired_ok and repaired_verifier_passed),
                 "issues": repaired_issues,
             }
 

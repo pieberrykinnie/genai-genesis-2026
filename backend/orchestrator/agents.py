@@ -38,13 +38,15 @@ class MemoVerificationResult(BaseModel):
 MemoWriterAgent = rt.agent_node(
     name="MemoWriterAgent",
     llm=make_railtracks_llm(),
-    output_schema=CouncilMemo,
     system_message=(
         "You are a municipal planning memo writer. "
         "Use only the evidence pack and selected clause IDs. "
         "Do not invent numbers. "
         "Do not invent policy clauses. "
-        "Explain trade-offs in plain language for council members."
+        "Explain trade-offs in plain language for council members. "
+        "Return ONLY a JSON object with keys: "
+        "executive_summary, environmental_section, economic_section, sociological_section, "
+        "recommendation_section, clause_narratives, disclaimer."
     )
 )
 
@@ -52,11 +54,11 @@ MemoWriterAgent = rt.agent_node(
 MemoGroundingVerifierAgent = rt.agent_node(
     name="MemoGroundingVerifierAgent",
     llm=make_railtracks_llm(),
-    output_schema=MemoVerificationResult,
     system_message=(
         "You are a strict memo verifier. "
         "Validate the memo against proposal, evidence_pack, and policy_decision. "
         "Fail if memo invents numbers, conflicts with recommendation, or misaligns clause narratives. "
+        "Return ONLY a JSON object with keys: passed (boolean), issues (array of strings). "
         "Return passed=true only when all checks pass. "
         "Return concise actionable issues."
     ),

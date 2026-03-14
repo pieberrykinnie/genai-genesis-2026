@@ -11,7 +11,7 @@ from railtracks.evaluations.evaluators.metrics import LLMMetric
 from models import PolicyDecision, ProposalInput
 from orchestrator.agents import MemoGroundingVerifierAgent, MemoWriterAgent
 from orchestrator.llm_factory import make_railtracks_llm
-from orchestrator.validators import validate_memo_grounding
+from orchestrator.validators import coerce_council_memo, coerce_verifier_result, validate_memo_grounding
 from policy.clause_catalog import CLAUSE_CATALOG
 
 
@@ -141,8 +141,10 @@ async def _run_workflow_for_scenario(payload: dict) -> dict:
         validation_errors: list[str] | None = None,
     ) -> str:
         lines = [
-            "Generate a council memo as structured output.",
+            "Generate a council memo as JSON.",
+            "Return JSON only, no markdown and no extra commentary.",
             "Use only provided evidence and selected clauses.",
+            "In recommendation_section, include the exact recommendation token from policy_decision.recommendation.",
             f"Proposal: {proposal_obj.model_dump_json()}",
             f"Policy decision: {policy_obj.model_dump_json()}",
             f"Evidence pack: {evidence_obj}",
@@ -161,13 +163,19 @@ async def _run_workflow_for_scenario(payload: dict) -> dict:
     ) -> str:
         return "\n".join(
             [
-                "Verify this memo for grounding and policy alignment.",
+                "Verify this memo for grounding and policy alignment and return JSON.",
+                "Return JSON only with keys: passed, issues.",
+                "Allowed failure reasons only:",
+                "1) invented numeric claims not supported by proposal/evidence",
+                "2) recommendation text misaligned with policy_decision.recommendation",
+                "3) clause narratives misaligned with selected_clause_ids.",
+                "Do not fail for style, verbosity, or omitted non-critical fields.",
                 f"Proposal: {proposal_obj.model_dump_json()}",
                 f"Policy decision: {policy_obj.model_dump_json()}",
                 f"Evidence pack: {evidence_obj}",
                 f"Memo: {memo_obj.model_dump_json()}",
                 f"Clause text map: {clause_obj}",
-                "Return passed=true only if there are no issues.",
+                "Set passed=true only if there are no issues.",
             ]
         )
 
@@ -180,38 +188,60 @@ async def _run_workflow_for_scenario(payload: dict) -> dict:
                 "policy_decision": policy.model_dump(mode="python"),
             }
         )
-        draft = await rt.call(
+        draft_raw = await rt.call(
             MemoWriterAgent,
             _memo_writer_prompt(proposal, evidence_pack, policy, clause_text),
         )
-        det_ok, det_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
-        verifier = await rt.call(
-            MemoGroundingVerifierAgent,
-            _memo_verifier_prompt(proposal, evidence_pack, policy, draft, clause_text),
-        )
-        if det_ok and verifier.passed:
+        draft, draft_parse_errors = coerce_council_memo(draft_raw)
+        if draft is None:
+            det_ok = False
+            det_errors = list(draft_parse_errors)
+            verifier_passed = False
+            verifier_issues = ["verifier_skipped_due_to_memo_parse_error"]
+            verifier_parse_errors: list[str] = []
+        else:
+            det_ok, det_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
+            verifier_raw = await rt.call(
+                MemoGroundingVerifierAgent,
+                _memo_verifier_prompt(proposal, evidence_pack, policy, draft, clause_text),
+            )
+            verifier_passed, verifier_issues, verifier_parse_errors = coerce_verifier_result(verifier_raw)
+
+        combined_issues = [*det_errors, *verifier_issues, *verifier_parse_errors]
+        if draft is not None and det_ok and verifier_passed:
             return {"verification_passed": True, "repair_attempted": False, "issues": []}
 
-        evidence_with_errors = {**evidence_pack, "validation_errors": [*det_errors, *verifier.issues]}
-        repaired = await rt.call(
+        evidence_with_errors = {**evidence_pack, "validation_errors": combined_issues}
+        repaired_raw = await rt.call(
             MemoWriterAgent,
             _memo_writer_prompt(
                 proposal,
                 evidence_with_errors,
                 policy,
                 clause_text,
-                validation_errors=[*det_errors, *verifier.issues],
+                validation_errors=combined_issues,
             ),
         )
+        repaired, repaired_parse_errors = coerce_council_memo(repaired_raw)
+        if repaired is None:
+            return {
+                "verification_passed": False,
+                "repair_attempted": True,
+                "issues": [*combined_issues, *repaired_parse_errors],
+            }
+
         repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
-        repaired_verifier = await rt.call(
+        repaired_verifier_raw = await rt.call(
             MemoGroundingVerifierAgent,
             _memo_verifier_prompt(proposal, evidence_pack, policy, repaired, clause_text),
         )
+        repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = coerce_verifier_result(
+            repaired_verifier_raw
+        )
         return {
-            "verification_passed": bool(repaired_ok and repaired_verifier.passed),
+            "verification_passed": bool(repaired_ok and repaired_verifier_passed),
             "repair_attempted": True,
-            "issues": [*repaired_errors, *repaired_verifier.issues],
+            "issues": [*repaired_errors, *repaired_verifier_issues, *repaired_verifier_parse_errors],
         }
 
     try:
