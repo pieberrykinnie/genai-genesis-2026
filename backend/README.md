@@ -12,7 +12,7 @@ uv run fastapi dev main.py
 ```bash
 ELECTRICITY_MAPS_API_KEY=
 MAPTILER_API_KEY=
-NOMINATIM_USER_AGENT=genai-genesis-2026/1.0 (local-dev)
+NOMINATIM_USER_AGENT=genai-genesis-2026-local-dev/1.0
 GROQ_API_KEY=
 GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_API_BASE=https://api.groq.com/openai/v1
@@ -25,6 +25,12 @@ STRICT_DATA_MODE=true
 STATCAN_CACHE_DIR=./data/statcan_cache
 MODEL_PATH=./models/grid_strain_model.pkl
 ```
+
+Geocoding order is:
+
+1. MapTiler geocoding API (if key works)
+2. OpenStreetMap Nominatim fallback
+3. Province centroid fallback only when `STRICT_DATA_MODE=false`
 
 ## Endpoints
 
