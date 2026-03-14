@@ -1,0 +1,289 @@
+{
+ "currentVersion": 11.1,
+ "serviceDescription": "The Canadian Drought Monitor (CDM) is a composite product developed from a wide assortment of information such as the Normalized Difference Vegetation Index (NDVI), streamflow values, Palmer Drought Index, and drought indicators used by the agriculture, forest and water management sectors. Drought prone regions are analyzed based on precipitation, temperature, drought model index maps, and climate data and are interpreted by federal, provincial and academic scientists. Once a consensus is reached, a monthly map showing drought designations for Canada is digitized. Agriculture and Agri-Food Canada's National Agroclimate Information Service (NAIS) updates this dataset on a monthly basis, usually by the 10th of every month to correspond to the end of the previous month, and subsequent Canadian input into the larger North American Drought Monitor (NA-DM). The drought areas are classified as follows: - D0 (Abnormally Dry) - represents an event that occurs once every 3-5 years - D1 (Moderate Drought) - represents an event that occurs every 5-10 years - D2 (Severe Drought) - represents an event that occurs every 10-20 years - D3 (Extreme Drought) - represents an event that occurs every 20-25 years - D4 (Exceptional Drought) - represents an event that occurs every 50 years. For more information, visit: https://open.canada.ca/data/en/dataset/292646cd-619f-4200-afb1-8b2c52f984a2",
+ "name": "canadian_drought_monitor",
+ "description": "The Canadian Drought Monitor (CDM) is a composite product developed from a wide assortment of information such as the Normalized Difference Vegetation Index (NDVI), streamflow values, Palmer Drought Index, and drought indicators used by the agriculture, forest and water management sectors. Drought prone regions are analyzed based on precipitation, temperature, drought model index maps, and climate data and are interpreted by federal, provincial and academic scientists. Once a consensus is reached, a monthly map showing drought designations for Canada is digitized. Agriculture and Agri-Food Canada's National Agroclimate Information Service (NAIS) updates this dataset on a monthly basis, usually by the 10th of every month to correspond to the end of the previous month, and subsequent Canadian input into the larger North American Drought Monitor (NA-DM). The drought areas are classified as follows: - D0 (Abnormally Dry) - represents an event that occurs once every 3-5 years - D1 (Moderate Drought) - represents an event that occurs every 5-10 years - D2 (Severe Drought) - represents an event that occurs every 10-20 years - D3 (Extreme Drought) - represents an event that occurs every 20-25 years - D4 (Exceptional Drought) - represents an event that occurs every 50 years. For more information, visit: https://open.canada.ca/data/en/dataset/292646cd-619f-4200-afb1-8b2c52f984a2",
+ "extent": {
+  "xmin": -1.56980635866E7,
+  "ymin": 5116257.891900003,
+  "xmax": -5853063.5866,
+  "ymax": 1.7926257891900003E7,
+  "spatialReference": {
+   "wkid": 102100,
+   "latestWkid": 3857
+  }
+ },
+ "initialExtent": {
+  "xmin": -1.56980635866E7,
+  "ymin": 5116257.891900003,
+  "xmax": -5853063.5866,
+  "ymax": 1.7926257891900003E7,
+  "spatialReference": {
+   "wkid": 102100,
+   "latestWkid": 3857
+  }
+ },
+ "fullExtent": {
+  "xmin": -1.56980635866E7,
+  "ymin": 5116257.891900003,
+  "xmax": -5853063.5866,
+  "ymax": 1.7926257891900003E7,
+  "spatialReference": {
+   "wkid": 102100,
+   "latestWkid": 3857
+  }
+ },
+ "sortableFields": "MinPS,MaxPS,LowPS,HighPS,CenterX,CenterY,ZOrder,Shape_Length,Shape_Area,dateEnd",
+ "bandCount": 1,
+ "pixelType": "S8",
+ "minValues": [],
+ "maxValues": [],
+ "meanValues": [],
+ "stdvValues": [],
+ "hasMultidimensions": false,
+ "timeInfo": {
+  "startTimeField": "dateEnd",
+  "endTimeField": "dateEnd",
+  "timeExtent": [
+   1038484800000,
+   1772280000000
+  ],
+  "timeReference": null
+ },
+ "pixelSizeX": 5000,
+ "pixelSizeY": 5000,
+ "datasetFormat": "AMD",
+ "uncompressedSize": 5044578,
+ "blockWidth": 2048,
+ "blockHeight": 256,
+ "compressionType": "None",
+ "bandNames": [
+  "Band_1"
+ ],
+ "allowCopy": true,
+ "allowAnalysis": true,
+ "itemAccess": false,
+ "minPixelSize": 0,
+ "maxPixelSize": 0,
+ "copyrightText": "Agriculture and Agri-Food Canada",
+ "serviceDataType": "esriImageServiceDataTypeGeneric",
+ "serviceSourceType": "esriImageServiceSourceTypeMosaicDataset",
+ "objectIdField": "OBJECTID",
+ "fields": [
+  {
+   "name": "OBJECTID",
+   "type": "esriFieldTypeOID",
+   "alias": "OBJECTID",
+   "domain": null
+  },
+  {
+   "name": "Shape",
+   "type": "esriFieldTypeGeometry",
+   "alias": "Shape",
+   "domain": null
+  },
+  {
+   "name": "Name",
+   "type": "esriFieldTypeString",
+   "alias": "Name",
+   "domain": null,
+   "length": 200
+  },
+  {
+   "name": "MinPS",
+   "type": "esriFieldTypeDouble",
+   "alias": "MinPS",
+   "domain": null
+  },
+  {
+   "name": "MaxPS",
+   "type": "esriFieldTypeDouble",
+   "alias": "MaxPS",
+   "domain": null
+  },
+  {
+   "name": "LowPS",
+   "type": "esriFieldTypeDouble",
+   "alias": "LowPS",
+   "domain": null
+  },
+  {
+   "name": "HighPS",
+   "type": "esriFieldTypeDouble",
+   "alias": "HighPS",
+   "domain": null
+  },
+  {
+   "name": "Category",
+   "type": "esriFieldTypeInteger",
+   "alias": "Category",
+   "domain": {
+    "type": "codedValue",
+    "name": "MosaicCatalogItemCategoryDomain",
+    "description": "Catalog item categories.",
+    "codedValues": [
+     {
+      "name": "Unknown",
+      "code": 0
+     },
+     {
+      "name": "Primary",
+      "code": 1
+     },
+     {
+      "name": "Overview",
+      "code": 2
+     },
+     {
+      "name": "Unprocessed Overview",
+      "code": 3
+     },
+     {
+      "name": "Partial Overview",
+      "code": 4
+     },
+     {
+      "name": "Inactive",
+      "code": 5
+     },
+     {
+      "name": "Uploaded",
+      "code": 253
+     },
+     {
+      "name": "Incomplete",
+      "code": 254
+     },
+     {
+      "name": "Custom",
+      "code": 255
+     }
+    ],
+    "mergePolicy": "esriMPTDefaultValue",
+    "splitPolicy": "esriSPTDefaultValue"
+   }
+  },
+  {
+   "name": "Tag",
+   "type": "esriFieldTypeString",
+   "alias": "Tag",
+   "domain": null,
+   "length": 100
+  },
+  {
+   "name": "GroupName",
+   "type": "esriFieldTypeString",
+   "alias": "GroupName",
+   "domain": null,
+   "length": 100
+  },
+  {
+   "name": "ProductName",
+   "type": "esriFieldTypeString",
+   "alias": "ProductName",
+   "domain": null,
+   "length": 100
+  },
+  {
+   "name": "CenterX",
+   "type": "esriFieldTypeDouble",
+   "alias": "CenterX",
+   "domain": null
+  },
+  {
+   "name": "CenterY",
+   "type": "esriFieldTypeDouble",
+   "alias": "CenterY",
+   "domain": null
+  },
+  {
+   "name": "ZOrder",
+   "type": "esriFieldTypeInteger",
+   "alias": "ZOrder",
+   "domain": null
+  },
+  {
+   "name": "Shape_Length",
+   "type": "esriFieldTypeDouble",
+   "alias": "Shape_Length",
+   "domain": null
+  },
+  {
+   "name": "Shape_Area",
+   "type": "esriFieldTypeDouble",
+   "alias": "Shape_Area",
+   "domain": null
+  },
+  {
+   "name": "dateEnd",
+   "type": "esriFieldTypeDate",
+   "alias": "dateEnd",
+   "domain": null,
+   "length": 8
+  }
+ ],
+ "capabilities": "Image,Metadata,Catalog,Mensuration",
+ "defaultMosaicMethod": "ByAttribute",
+ "allowedMosaicMethods": "ByAttribute,None,LockRaster",
+ "sortField": "dateEnd",
+ "sortValue": "3000",
+ "sortAscending": true,
+ "mosaicOperator": "First",
+ "maxDownloadSizeLimit": 2048,
+ "defaultCompressionQuality": 75,
+ "defaultResamplingMethod": "Nearest",
+ "maxImageHeight": 4100,
+ "maxImageWidth": 15000,
+ "maxRecordCount": 1000,
+ "maxDownloadImageCount": 20,
+ "maxMosaicImageCount": 1,
+ "allowRasterFunction": true,
+ "rasterFunctionInfos": [
+  {
+   "name": "canadian_drought_monitor",
+   "description": "Remap and Attribute Table raster functions",
+   "help": ""
+  },
+  {
+   "name": "cdm_drought_change",
+   "description": "A raster function template.",
+   "help": ""
+  },
+  {
+   "name": "None",
+   "description": "",
+   "help": ""
+  }
+ ],
+ "rasterTypeInfos": [
+  {
+   "name": "Raster Dataset",
+   "description": "Supports all ArcGIS Raster Datasets",
+   "help": ""
+  }
+ ],
+ "mensurationCapabilities": "Basic",
+ "hasHistograms": false,
+ "hasColormap": false,
+ "hasRasterAttributeTable": false,
+ "minScale": 0,
+ "maxScale": 0,
+ "exportTilesAllowed": false,
+ "supportsStatistics": true,
+ "supportsAdvancedQueries": true,
+ "editFieldsInfo": null,
+ "ownershipBasedAccessControlForRasters": null,
+ "allowComputeTiePoints": false,
+ "useStandardizedQueries": true,
+ "advancedQueryCapabilities": {
+  "useStandardizedQueries": true,
+  "supportsStatistics": true,
+  "supportsOrderBy": true,
+  "supportsDistinct": true,
+  "supportsPagination": true
+ },
+ "spatialReference": {
+  "wkid": 102100,
+  "latestWkid": 3857
+ }
+}

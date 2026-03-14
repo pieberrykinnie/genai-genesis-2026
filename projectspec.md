@@ -21,7 +21,11 @@
    grid strain probability from a proposed load addition
 3. Groq LLM — grounded report + negotiation playbook generation, citing only
    numbers produced by layers 1 and 2
+=========
+**What it is:** A dynamic negotiation and impact-modeling engine for municipal governments. By combining real-time Canadian open data with predictive ML, it stress-tests proposed data centers against local infrastructure limits, generating a strict, mathematically sound Community Benefit Agreement (CBA) term sheet to protect local taxpayers.
 
+**The pitch frame (important for demo):** The era of vague job promises and secret NDAs is over. City councils face intense public backlash over strained grids, water depletion, and spiked utility bills. DataSite shifts the power dynamic. It arms municipalities to stress-test data center proposals and generates a legally actionable Community Benefit Agreement (CBA) playbook—dictating the exact water replenishment targets, local hiring minimums, and grid infrastructure costs the developer must legally commit to before a single shovel hits the dirt.
+>>>>>>>>> Temporary merge branch 2
 
 ---
 
@@ -1069,7 +1073,13 @@ It must not invent figures. Every claim in the report must cite a calculated val
 
 ```python
 GROQ_MODEL = "llama-3.3-70b-versatile"  # Fast, high quality
+<<<<<<<<< Temporary merge branch 1
 # Fallback: "mixtral-8x7b-32768"
+
+SYSTEM_PROMPT = """You are a municipal planning advisor helping city councils evaluate
+data centre proposals in Canada. You receive structured impact assessment data and
+generate a clear, honest report for non-technical decision-makers.
+=========
 
 SYSTEM_PROMPT = """You are a strict municipal planning advisor helping city councils evaluate
 data centre proposals. You generate a clear, mathematically-grounded report and a legally

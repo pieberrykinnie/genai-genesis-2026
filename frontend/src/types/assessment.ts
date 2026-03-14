@@ -13,60 +13,81 @@ export type CanadianProvince =
   | "NS"
   | "NB"
   | "NL"
-  | "PE"
+  | "PE";
 
 export type CoolingType =
   | "air"
   | "evaporative"
   | "liquid_immersion"
-  | "hybrid"
+  | "hybrid";
 
-export type FacilityType = "hyperscale" | "enterprise" | "colocation"
+export type FacilityType = "hyperscale" | "enterprise" | "colocation";
 
-export type RagScore = "green" | "amber" | "red"
+export type RagScore = "green" | "amber" | "red";
 
 export interface DataCentreProposal {
-  address: string
-  province: CanadianProvince
-  it_load_mw: number // 1–500
-  pue: number // 1.1–2.0
-  wue: number // 0.5–3.0 L/kWh
-  cooling_type: CoolingType
-  facility_type: FacilityType
-  capex_cad: number // CAD millions
-  construction_months: number // 12–48
-  has_onsite_generation?: boolean
-  renewable_ppa?: boolean
-}
-
-export interface PillarResult {
-  score: RagScore
-  summary?: string
-  details?: Record<string, unknown>
-}
-
-export interface GridStrainResult {
-  score: RagScore
-  probability?: number
-  summary?: string
-}
-
-export interface ImpactAssessmentMetadata {
-  proposal_id?: string
-  location?: string
-  timestamp?: string
-  data_freshness?: string
+  address: string;
+  province: CanadianProvince;
+  it_load_mw: number; // 1–500
+  pue: number; // 1.1–2.0
+  wue: number; // 0.5–3.0 L/kWh
+  cooling_type: CoolingType;
+  facility_type: FacilityType;
+  capex_cad: number; // CAD millions
+  construction_months: number; // 12–48
+  has_onsite_generation?: boolean;
+  renewable_ppa?: boolean;
 }
 
 export interface ImpactAssessment {
-  metadata?: ImpactAssessmentMetadata
-  environmental: PillarResult
-  economic: PillarResult
-  sociological: PillarResult
-  grid_strain: GridStrainResult
-  overall_score: RagScore
-  negotiation_playbook: string[]
-  report_narrative: string
-  raw_inputs_used?: Record<string, unknown>
-  calculation_methodology?: string
+  proposal_id: string;
+  data_freshness: Record<string, string>;
+  location: {
+    municipality: string;
+    province: string;
+    lat: number;
+    lng: number;
+  };
+  environmental: {
+    annual_carbon_tonnes: number;
+    carbon_score: string;
+    total_water_litres_per_day: number;
+    water_score: string;
+    grid_score: string;
+    pct_of_municipal_daily_supply: number;
+  };
+  economic: {
+    direct_permanent_jobs: number;
+    total_permanent_jobs_with_multiplier: number;
+    estimated_total_tax_revenue_10yr_cad: number;
+    net_fiscal_impact_10yr_cad: number;
+    fiscal_score: string;
+  };
+  sociological: {
+    indigenous_flag: boolean;
+    community_vulnerability_index: number;
+    sociological_score: string;
+    nearest_first_nation_km: number;
+    air_quality_baseline: string;
+  };
+  grid_strain: {
+    strain_probability: number;
+    rate_increase_probability: number;
+    predicted_strain_level: string;
+    confidence: number;
+    model_version: string;
+  };
+  overall_score: {
+    composite_rag: string;
+    summary_sentence: string;
+  };
+  negotiation_playbook: string[];
+  report_narrative: string;
+}
+
+export interface StreamEvent {
+  stage: string;
+  pct: number;
+  result?: ImpactAssessment;
+  error?: unknown;
 }
