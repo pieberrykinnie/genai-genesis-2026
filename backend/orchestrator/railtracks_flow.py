@@ -188,10 +188,48 @@ async def _write_memo(
     try:
         import railtracks as rt
 
-        from orchestrator.agents import MemoGroundingVerifierAgent, MemoInput, MemoVerificationInput, MemoWriterAgent
+        from orchestrator.agents import MemoGroundingVerifierAgent, MemoWriterAgent
         from orchestrator.validators import validate_memo_grounding
 
         clause_text = {clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids}
+
+        def _memo_writer_prompt(
+            proposal_obj: ProposalInput,
+            evidence_obj: dict[str, Any],
+            policy_obj: PolicyDecision,
+            clause_obj: dict[str, str],
+            validation_errors: list[str] | None = None,
+        ) -> str:
+            lines = [
+                "Generate a council memo as structured output.",
+                "Use only provided evidence and selected clauses.",
+                f"Proposal: {proposal_obj.model_dump_json()}",
+                f"Policy decision: {policy_obj.model_dump_json()}",
+                f"Evidence pack: {evidence_obj}",
+                f"Clause text map: {clause_obj}",
+            ]
+            if validation_errors:
+                lines.append(f"Prior validation issues to fix: {validation_errors}")
+            return "\n".join(lines)
+
+        def _memo_verifier_prompt(
+            proposal_obj: ProposalInput,
+            evidence_obj: dict[str, Any],
+            policy_obj: PolicyDecision,
+            memo_obj: CouncilMemo,
+            clause_obj: dict[str, str],
+        ) -> str:
+            return "\n".join(
+                [
+                    "Verify this memo for grounding and policy alignment.",
+                    f"Proposal: {proposal_obj.model_dump_json()}",
+                    f"Policy decision: {policy_obj.model_dump_json()}",
+                    f"Evidence pack: {evidence_obj}",
+                    f"Memo: {memo_obj.model_dump_json()}",
+                    f"Clause text map: {clause_obj}",
+                    "Return passed=true only if there are no issues.",
+                ]
+            )
 
         @rt.session(name="council_decision_workflow", save_state=True)
         async def _run_workflow() -> dict[str, Any]:
@@ -205,23 +243,12 @@ async def _write_memo(
 
             draft = await rt.call(
                 MemoWriterAgent,
-                MemoInput(
-                    proposal=proposal,
-                    evidence_pack=evidence_pack,
-                    policy_decision=policy,
-                    clause_text=clause_text,
-                ),
+                _memo_writer_prompt(proposal, evidence_pack, policy, clause_text),
             )
             deterministic_ok, deterministic_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
             verifier = await rt.call(
                 MemoGroundingVerifierAgent,
-                MemoVerificationInput(
-                    proposal=proposal,
-                    evidence_pack=evidence_pack,
-                    policy_decision=policy,
-                    memo=draft,
-                    clause_text=clause_text,
-                ),
+                _memo_verifier_prompt(proposal, evidence_pack, policy, draft, clause_text),
             )
 
             issues = list(deterministic_errors)
@@ -236,23 +263,18 @@ async def _write_memo(
             evidence_with_errors = {**evidence_pack, "validation_errors": issues}
             repaired = await rt.call(
                 MemoWriterAgent,
-                MemoInput(
-                    proposal=proposal,
-                    evidence_pack=evidence_with_errors,
-                    policy_decision=policy,
-                    clause_text=clause_text,
+                _memo_writer_prompt(
+                    proposal,
+                    evidence_with_errors,
+                    policy,
+                    clause_text,
+                    validation_errors=issues,
                 ),
             )
             repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
             repaired_verifier = await rt.call(
                 MemoGroundingVerifierAgent,
-                MemoVerificationInput(
-                    proposal=proposal,
-                    evidence_pack=evidence_pack,
-                    policy_decision=policy,
-                    memo=repaired,
-                    clause_text=clause_text,
-                ),
+                _memo_verifier_prompt(proposal, evidence_pack, policy, repaired, clause_text),
             )
             repaired_issues = list(repaired_errors)
             repaired_issues.extend(repaired_verifier.issues)

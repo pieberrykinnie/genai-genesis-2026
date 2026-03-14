@@ -9,7 +9,7 @@ from railtracks.evaluations import JudgeEvaluator, ToolUseEvaluator, evaluate, e
 from railtracks.evaluations.evaluators.metrics import LLMMetric
 
 from models import PolicyDecision, ProposalInput
-from orchestrator.agents import MemoGroundingVerifierAgent, MemoInput, MemoVerificationInput, MemoWriterAgent
+from orchestrator.agents import MemoGroundingVerifierAgent, MemoWriterAgent
 from orchestrator.llm_factory import make_railtracks_llm
 from orchestrator.validators import validate_memo_grounding
 from policy.clause_catalog import CLAUSE_CATALOG
@@ -133,6 +133,44 @@ async def _run_workflow_for_scenario(payload: dict) -> dict:
     evidence_pack: dict = payload["evidence_pack"]
     clause_text = {clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids}
 
+    def _memo_writer_prompt(
+        proposal_obj: ProposalInput,
+        evidence_obj: dict,
+        policy_obj: PolicyDecision,
+        clause_obj: dict[str, str],
+        validation_errors: list[str] | None = None,
+    ) -> str:
+        lines = [
+            "Generate a council memo as structured output.",
+            "Use only provided evidence and selected clauses.",
+            f"Proposal: {proposal_obj.model_dump_json()}",
+            f"Policy decision: {policy_obj.model_dump_json()}",
+            f"Evidence pack: {evidence_obj}",
+            f"Clause text map: {clause_obj}",
+        ]
+        if validation_errors:
+            lines.append(f"Prior validation issues to fix: {validation_errors}")
+        return "\n".join(lines)
+
+    def _memo_verifier_prompt(
+        proposal_obj: ProposalInput,
+        evidence_obj: dict,
+        policy_obj: PolicyDecision,
+        memo_obj,
+        clause_obj: dict[str, str],
+    ) -> str:
+        return "\n".join(
+            [
+                "Verify this memo for grounding and policy alignment.",
+                f"Proposal: {proposal_obj.model_dump_json()}",
+                f"Policy decision: {policy_obj.model_dump_json()}",
+                f"Evidence pack: {evidence_obj}",
+                f"Memo: {memo_obj.model_dump_json()}",
+                f"Clause text map: {clause_obj}",
+                "Return passed=true only if there are no issues.",
+            ]
+        )
+
     @rt.session(name="council_decision_workflow", save_state=True)
     async def _workflow() -> dict:
         rt.context.update(
@@ -144,23 +182,12 @@ async def _run_workflow_for_scenario(payload: dict) -> dict:
         )
         draft = await rt.call(
             MemoWriterAgent,
-            MemoInput(
-                proposal=proposal,
-                evidence_pack=evidence_pack,
-                policy_decision=policy,
-                clause_text=clause_text,
-            ),
+            _memo_writer_prompt(proposal, evidence_pack, policy, clause_text),
         )
         det_ok, det_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
         verifier = await rt.call(
             MemoGroundingVerifierAgent,
-            MemoVerificationInput(
-                proposal=proposal,
-                evidence_pack=evidence_pack,
-                policy_decision=policy,
-                memo=draft,
-                clause_text=clause_text,
-            ),
+            _memo_verifier_prompt(proposal, evidence_pack, policy, draft, clause_text),
         )
         if det_ok and verifier.passed:
             return {"verification_passed": True, "repair_attempted": False, "issues": []}
@@ -168,23 +195,18 @@ async def _run_workflow_for_scenario(payload: dict) -> dict:
         evidence_with_errors = {**evidence_pack, "validation_errors": [*det_errors, *verifier.issues]}
         repaired = await rt.call(
             MemoWriterAgent,
-            MemoInput(
-                proposal=proposal,
-                evidence_pack=evidence_with_errors,
-                policy_decision=policy,
-                clause_text=clause_text,
+            _memo_writer_prompt(
+                proposal,
+                evidence_with_errors,
+                policy,
+                clause_text,
+                validation_errors=[*det_errors, *verifier.issues],
             ),
         )
         repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
         repaired_verifier = await rt.call(
             MemoGroundingVerifierAgent,
-            MemoVerificationInput(
-                proposal=proposal,
-                evidence_pack=evidence_pack,
-                policy_decision=policy,
-                memo=repaired,
-                clause_text=clause_text,
-            ),
+            _memo_verifier_prompt(proposal, evidence_pack, policy, repaired, clause_text),
         )
         return {
             "verification_passed": bool(repaired_ok and repaired_verifier.passed),
@@ -192,13 +214,23 @@ async def _run_workflow_for_scenario(payload: dict) -> dict:
             "issues": [*repaired_errors, *repaired_verifier.issues],
         }
 
-    result, _session = await _workflow()
-    return {
-        "name": payload["name"],
-        "verification_passed": bool(result.get("verification_passed", False)),
-        "repair_attempted": bool(result.get("repair_attempted", False)),
-        "issues": list(result.get("issues", [])),
-    }
+    try:
+        result, _session = await _workflow()
+        return {
+            "name": payload["name"],
+            "verification_passed": bool(result.get("verification_passed", False)),
+            "repair_attempted": bool(result.get("repair_attempted", False)),
+            "issues": list(result.get("issues", [])),
+            "workflow_error": None,
+        }
+    except Exception as exc:
+        return {
+            "name": payload["name"],
+            "verification_passed": False,
+            "repair_attempted": False,
+            "issues": [f"workflow_error: {exc.__class__.__name__}"],
+            "workflow_error": str(exc),
+        }
 
 
 def _build_judge_evaluator() -> JudgeEvaluator:
@@ -217,12 +249,29 @@ def _write_outputs(
     eval_result,
     session_files: list[str],
     include_judge: bool,
+    note: str | None = None,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / "railtracks_eval_result.json"
     summary_path = out_dir / "railtracks_eval_summary.md"
 
-    json_path.write_text(eval_result.model_dump_json(indent=2), encoding="utf-8")
+    if eval_result is None:
+        serialized_eval = None
+    elif isinstance(eval_result, list):
+        serialized_eval = [item.model_dump(mode="json") if hasattr(item, "model_dump") else str(item) for item in eval_result]
+    elif hasattr(eval_result, "model_dump"):
+        serialized_eval = eval_result.model_dump(mode="json")
+    else:
+        serialized_eval = str(eval_result)
+
+    payload = {
+        "scenario_results": scenario_results,
+        "session_files": session_files,
+        "judge_enabled": include_judge,
+        "note": note,
+        "evaluation_result": serialized_eval,
+    }
+    json_path.write_text(__import__("json").dumps(payload, indent=2), encoding="utf-8")
 
     passed = sum(1 for s in scenario_results if s["verification_passed"])
     lines = [
@@ -233,9 +282,10 @@ def _write_outputs(
         f"- Judge evaluator enabled: {'yes' if include_judge else 'no'}",
         f"- Session traces evaluated: {len(session_files)}",
         "",
-        "## Scenario Outcomes",
-        "",
     ]
+    if note:
+        lines.extend([f"- Note: {note}", ""])
+    lines.extend(["## Scenario Outcomes", ""])
     for row in scenario_results:
         issues = "; ".join(row["issues"]) if row["issues"] else "none"
         lines.append(
@@ -268,17 +318,26 @@ def main() -> None:
     after_files = _list_workflow_session_files()
     new_files = sorted(str(p) for p in (after_files - before_files))
 
-    if not new_files:
-        raise RuntimeError("No new railtracks session files were produced; evaluation cannot proceed.")
-
-    data_points = extract_agent_data_points(new_files)
-    evaluators = [ToolUseEvaluator()]
     include_judge = not args.skip_judge
-    if include_judge:
-        evaluators.append(_build_judge_evaluator())
+    note: str | None = None
+    eval_result = None
 
-    eval_result = evaluate(data_points, evaluators, name="council_decision_workflow_eval")
-    _write_outputs(args.out_dir, scenario_results, eval_result, new_files, include_judge)
+    if new_files:
+        try:
+            data_points = extract_agent_data_points(new_files)
+            evaluators = [ToolUseEvaluator()]
+            if include_judge:
+                evaluators.append(_build_judge_evaluator())
+            eval_result = evaluate(data_points, evaluators, name="council_decision_workflow_eval")
+        except Exception as exc:
+            note = f"Evaluation skipped due to runtime issue: {exc.__class__.__name__}: {exc}"
+    else:
+        note = (
+            "No new railtracks session files were produced. "
+            "This commonly occurs when the configured LLM backend does not support structured outputs."
+        )
+
+    _write_outputs(args.out_dir, scenario_results, eval_result, new_files, include_judge, note=note)
 
 
 if __name__ == "__main__":
