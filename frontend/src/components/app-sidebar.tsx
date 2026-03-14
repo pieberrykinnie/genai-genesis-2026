@@ -13,7 +13,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { CommandIcon, FileTextIcon, LayoutDashboardIcon } from "lucide-react"
+import {
+  CommandIcon,
+  FileTextIcon,
+  LayoutDashboardIcon,
+  BarChart3Icon,
+} from "lucide-react"
 
 const data = {
   user: {
@@ -32,6 +37,11 @@ const data = {
       url: "/dashboard/new-proposal",
       icon: <FileTextIcon />,
     },
+    {
+      title: "Results",
+      url: "/dashboard/results",
+      icon: <BarChart3Icon />,
+    },
   ],
 }
 
@@ -47,7 +57,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             >
               <a href="#">
                 <CommandIcon className="size-5!" />
-                <span className="text-base font-semibold">Acme Inc.</span>
+                <span className="text-base font-semibold">DataSite Impact</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
