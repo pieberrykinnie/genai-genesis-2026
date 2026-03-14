@@ -1,9 +1,24 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "DataSite Impact Analyzer backend"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi[standard]>=0.135.1",
+    "httpx>=0.28.1",
+    "joblib>=1.5.2",
+    "numpy>=2.3.3",
+    "pandas>=2.3.2",
+    "pydantic-settings>=2.11.0",
+    "python-dotenv>=1.1.1",
+    "scikit-learn>=1.7.2",
+    "xgboost>=3.0.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "ruff>=0.13.2",
 ]
