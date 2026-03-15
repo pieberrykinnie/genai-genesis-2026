@@ -9,12 +9,9 @@
     },
     {
       "name": "qc_lower_risk",
-      "verification_passed": false,
-      "repair_attempted": true,
-      "issues": [
-        "Invented numeric claim: capex of 800000.0 CAD in economic_section, actual capex is 800.0 CAD in proposal",
-        "Clause narratives misaligned with selected_clause_ids: only one clause narrative is provided, but the narrative matches the selected clause"
-      ],
+      "verification_passed": true,
+      "repair_attempted": false,
+      "issues": [],
       "workflow_error": null
     },
     {
@@ -26,11 +23,11 @@
     }
   ],
   "session_files": [
-    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_57635603-29cd-47ef-a301-ce0b16ad5787.json",
-    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_a8f429b7-12fc-455e-9d76-2e37b52511b1.json",
-    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_eeebd354-717d-4663-b34f-36f5e125fdbd.json"
+    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_78fa8685-d51f-4e59-bc16-c2aff2859717.json",
+    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_7f045b3b-dc78-478a-93ef-11b00a24ad8e.json",
+    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_87c6b41f-a36f-4944-9b19-61f55c65c26f.json"
   ],
-  "judge_enabled": true,
+  "judge_enabled": false,
   "note": "Evaluation skipped due to runtime issue: ValidationError: 1 validation error for LLMCall\ntotal_cost\n  Input should be a valid number [type=float_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.12/v/float_type",
   "evaluation_result": null
 }

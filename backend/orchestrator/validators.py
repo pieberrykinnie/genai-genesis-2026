@@ -111,6 +111,20 @@ def _extract_json_object(text: str) -> dict[str, Any]:
 
 def _normalize_memo_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
+    text_fields = [
+        "executive_summary",
+        "environmental_section",
+        "economic_section",
+        "sociological_section",
+        "recommendation_section",
+        "disclaimer",
+    ]
+    for field in text_fields:
+        value = normalized.get(field)
+        if value is None:
+            normalized[field] = ""
+        elif not isinstance(value, str):
+            normalized[field] = str(value)
 
     if "clause_narrative" in normalized and "clause_narratives" not in normalized:
         normalized["clause_narratives"] = normalized["clause_narrative"]
