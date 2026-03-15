@@ -16,6 +16,19 @@ DEFAULT_DEMOGRAPHICS: dict[str, float] = {
     "pct_postsecondary_certificate": 64.0,
 }
 
+PROVINCE_TO_AGGREGATE_GEO_UID: dict[str, str] = {
+    "NL": "1000210",
+    "PE": "1000211",
+    "NS": "1000212",
+    "NB": "1000213",
+    "QC": "1000224",
+    "ON": "1000235",
+    "MB": "1000246",
+    "SK": "1000247",
+    "AB": "1000248",
+    "BC": "1000259",
+}
+
 
 class StatCanStore:
     def __init__(self, db_path: Path | None = None) -> None:
@@ -28,6 +41,19 @@ class StatCanStore:
         return conn
 
     def get_csd_demographics(self, csd_uid: str, province: str) -> tuple[dict[str, float], dict[str, str]]:
+        def _normalize(rows: list[sqlite3.Row]) -> dict[str, float]:
+            mapped = {str(r["characteristic"]): float(r["value"]) for r in rows}
+            return {
+                "total_population": mapped.get("total_population", DEFAULT_DEMOGRAPHICS["total_population"]),
+                "median_total_income": mapped.get("median_total_income", DEFAULT_DEMOGRAPHICS["median_total_income"]),
+                "unemployment_rate": mapped.get("unemployment_rate", DEFAULT_DEMOGRAPHICS["unemployment_rate"]),
+                "pct_indigenous_identity": mapped.get("pct_indigenous_identity", DEFAULT_DEMOGRAPHICS["pct_indigenous_identity"]),
+                "pct_low_income_lim_at": mapped.get("pct_low_income_lim_at", DEFAULT_DEMOGRAPHICS["pct_low_income_lim_at"]),
+                "pct_postsecondary_certificate": mapped.get(
+                    "pct_postsecondary_certificate", DEFAULT_DEMOGRAPHICS["pct_postsecondary_certificate"]
+                ),
+            }
+
         if self.db_path.exists():
             try:
                 with self._connect() as conn:
@@ -40,18 +66,24 @@ class StatCanStore:
                         (csd_uid,),
                     ).fetchall()
                 if rows:
-                    mapped = {str(r["characteristic"]): float(r["value"]) for r in rows}
-                    out = {
-                        "total_population": mapped.get("total_population", DEFAULT_DEMOGRAPHICS["total_population"]),
-                        "median_total_income": mapped.get("median_total_income", DEFAULT_DEMOGRAPHICS["median_total_income"]),
-                        "unemployment_rate": mapped.get("unemployment_rate", DEFAULT_DEMOGRAPHICS["unemployment_rate"]),
-                        "pct_indigenous_identity": mapped.get("pct_indigenous_identity", DEFAULT_DEMOGRAPHICS["pct_indigenous_identity"]),
-                        "pct_low_income_lim_at": mapped.get("pct_low_income_lim_at", DEFAULT_DEMOGRAPHICS["pct_low_income_lim_at"]),
-                        "pct_postsecondary_certificate": mapped.get(
-                            "pct_postsecondary_certificate", DEFAULT_DEMOGRAPHICS["pct_postsecondary_certificate"]
-                        ),
-                    }
-                    return out, {"statcan_census": self.db_path.stat().st_mtime_ns.__str__()}
+                    out = _normalize(rows)
+                    return out, {"statcan_census": f"static_reference:sqlite:csd:{self.db_path.stat().st_mtime_ns}"}
+
+                province_uid = PROVINCE_TO_AGGREGATE_GEO_UID.get(province.upper())
+                if province_uid:
+                    rows = conn.execute(
+                        """
+                        SELECT characteristic, value
+                        FROM census_profile
+                        WHERE geo_uid = ?
+                        """,
+                        (province_uid,),
+                    ).fetchall()
+                    if rows:
+                        out = _normalize(rows)
+                        return out, {
+                            "statcan_census": f"static_reference:sqlite:province_aggregate:{self.db_path.stat().st_mtime_ns}"
+                        }
             except Exception:
                 pass
 
@@ -59,7 +91,7 @@ class StatCanStore:
         if province == "AB":
             demo["pct_indigenous_identity"] = 7.0
             demo["unemployment_rate"] = 6.8
-        return demo, {"statcan_census": "fallback_defaults"}
+        return demo, {"statcan_census": "unavailable:statcan_census_missing"}
 
     def get_municipal_supply_l_day(self, csd_uid: str, population: int) -> tuple[float, dict[str, str]]:
         if self.db_path.exists():
@@ -75,12 +107,15 @@ class StatCanStore:
                         (csd_uid,),
                     ).fetchone()
                 if row and row["daily_supply_litres"] is not None:
-                    return float(row["daily_supply_litres"]), {"statcan_water": self.db_path.stat().st_mtime_ns.__str__()}
+                    return (
+                        float(row["daily_supply_litres"]),
+                        {"statcan_water": f"static_reference:sqlite:{self.db_path.stat().st_mtime_ns}"},
+                    )
             except Exception:
                 pass
 
         estimated = float(population) * 220.0
-        return estimated, {"statcan_water": "fallback_population_estimate"}
+        return estimated, {"statcan_water": "static_reference:population_estimate"}
 
 
 def get_statcan_store() -> StatCanStore:

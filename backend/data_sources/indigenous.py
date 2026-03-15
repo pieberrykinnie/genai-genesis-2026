@@ -66,7 +66,7 @@ class IndigenousData:
                     "active_water_advisories_nearby": 0,
                     "indigenous_flag": False,
                 },
-                {"indigenous_data": "fallback_defaults"},
+                {"indigenous_data": "unavailable:indigenous_cache_missing"},
             )
 
         nearest = min(
@@ -85,7 +85,7 @@ class IndigenousData:
                 "active_water_advisories_nearby": int(has_advisory),
                 "indigenous_flag": indigenous_flag,
             },
-            {"indigenous_data": "local_cache"},
+            {"indigenous_data": "static_reference:local_cache"},
         )
 
 

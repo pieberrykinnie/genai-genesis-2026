@@ -14,6 +14,22 @@ from models import GridStrainPrediction
 from .train import engineer_prediction_features
 
 
+def _strain_level_from_probability(strain_probability: float) -> str:
+    if strain_probability < 0.25:
+        return "low"
+    if strain_probability < 0.55:
+        return "moderate"
+    return "high"
+
+
+def _normalize_probability(value: float) -> float:
+    clamped = max(0.0, min(0.9999, float(value)))
+    # Keep tiny non-zero values visible to downstream consumers that round display.
+    if 0.0 < clamped < 0.001:
+        return 0.001
+    return clamped
+
+
 @lru_cache(maxsize=1)
 def _load_model_artifact() -> dict[str, Any] | None:
     settings = get_settings()
@@ -28,14 +44,9 @@ def _load_model_artifact() -> dict[str, Any] | None:
 
 
 def _fallback_prediction(total_power_draw_mw: float, utilization: float | None) -> GridStrainPrediction:
-    strain_probability = max(0.02, min(0.98, total_power_draw_mw / 850.0 + (utilization or 0.0) * 0.35))
-    rate_increase_probability = max(0.01, min(0.95, strain_probability * 0.7 + (utilization or 0.0) * 0.2))
-    if strain_probability < 0.25:
-        level = "low"
-    elif strain_probability < 0.55:
-        level = "moderate"
-    else:
-        level = "high"
+    strain_probability = _normalize_probability(max(0.02, min(0.98, total_power_draw_mw / 850.0 + (utilization or 0.0) * 0.35)))
+    rate_increase_probability = _normalize_probability(max(0.01, min(0.95, strain_probability * 0.7 + (utilization or 0.0) * 0.2)))
+    level = _strain_level_from_probability(strain_probability)
     return GridStrainPrediction(
         strain_probability=round(strain_probability, 4),
         rate_increase_probability=round(rate_increase_probability, 4),
@@ -57,6 +68,7 @@ async def predict_grid_strain(
     current_utilization: float | None = None,
 ) -> GridStrainPrediction:
     total_power_draw_mw = max(0.0, float(it_load_mw) * float(pue))
+    capacity_mw = max(1, int(capacity_mw))
     artifact = _load_model_artifact()
     if artifact is None:
         return _fallback_prediction(total_power_draw_mw, current_utilization)
@@ -79,14 +91,11 @@ async def predict_grid_strain(
         return _fallback_prediction(total_power_draw_mw, current_utilization)
 
     utilization = float(current_utilization or 0.0)
-    rate_increase_probability = max(0.01, min(0.95, strain_probability * 0.72 + utilization * 0.24))
-    blended_risk = max(strain_probability, utilization)
-    if blended_risk < 0.25:
-        level = "low"
-    elif blended_risk < 0.55:
-        level = "moderate"
-    else:
-        level = "high"
+    capacity_pressure = total_power_draw_mw / float(capacity_mw)
+    stress_floor = min(0.05, capacity_pressure * 0.8 + utilization * 0.02)
+    strain_probability = _normalize_probability(max(strain_probability, stress_floor))
+    rate_increase_probability = _normalize_probability(max(0.01, min(0.95, strain_probability * 0.72 + utilization * 0.24)))
+    level = _strain_level_from_probability(strain_probability)
 
     importances = np.asarray(artifact.get("feature_importances", []), dtype=float)
     feature_values = {col: float(features[0][idx]) for idx, col in enumerate(feature_cols)}
@@ -102,8 +111,8 @@ async def predict_grid_strain(
     model_confidence = artifact.get("cv_auc") or artifact.get("train_auc") or 0.75
 
     return GridStrainPrediction(
-        strain_probability=round(strain_probability, 4),
-        rate_increase_probability=round(rate_increase_probability, 4),
+        strain_probability=round(strain_probability, 6),
+        rate_increase_probability=round(rate_increase_probability, 6),
         predicted_strain_level=level,
         confidence=round(float(model_confidence), 4),
         model_version=str(artifact.get("version", "xgboost-grid-model")),

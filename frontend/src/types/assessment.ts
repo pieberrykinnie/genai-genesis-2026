@@ -37,6 +37,7 @@ export interface ImpactAssessment {
     estimated_total_tax_revenue_10yr_cad: number;
     net_fiscal_impact_10yr_cad: number;
     fiscal_score: string;
+    jobs_score: string;
   };
   sociological: {
     indigenous_flag: boolean;
@@ -44,6 +45,8 @@ export interface ImpactAssessment {
     sociological_score: string;
     nearest_first_nation_km: number;
     air_quality_baseline: string;
+    residential_population_in_noise_zone: number;
+    estimated_noise_radius_m?: number | null;
   };
   grid_strain: {
     strain_probability: number;
@@ -56,6 +59,27 @@ export interface ImpactAssessment {
     composite_rag: string;
     summary_sentence: string;
   };
+  policy_decision?: {
+    recommendation: "approve" | "approve_with_conditions" | "defer" | "reject";
+    triggered_rules: string[];
+    selected_clause_ids: string[];
+    policy_summary: string;
+  };
+  memo?: {
+    executive_summary: string;
+    environmental_section: string;
+    economic_section: string;
+    sociological_section: string;
+    recommendation_section: string;
+    clause_narratives: string[];
+    disclaimer: string;
+  };
+  evidence_pack?: {
+    environmental?: Record<string, unknown>;
+    economic?: Record<string, unknown>;
+    sociological?: Record<string, unknown>;
+    grid_strain?: Record<string, unknown>;
+  };
   negotiation_playbook: string[];
   report_narrative: string;
 }
@@ -64,5 +88,5 @@ export interface StreamEvent {
   stage: string;
   pct: number;
   result?: ImpactAssessment;
-  error?: string;
+  error?: unknown;
 }

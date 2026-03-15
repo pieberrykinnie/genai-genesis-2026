@@ -65,6 +65,7 @@ class SociologicalImpact(BaseModel):
     nearest_first_nation_km: float
     air_quality_baseline: str
     residential_population_in_noise_zone: int
+    estimated_noise_radius_m: float | None = None
 
 class GridStrainPrediction(BaseModel):
     strain_probability: float

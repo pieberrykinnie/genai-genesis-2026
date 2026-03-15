@@ -22,7 +22,7 @@ async def get_carbon_intensity_g_per_kwh(province: str) -> tuple[float, dict[str
     zone = PROVINCE_TO_ZONE.get(province)
     if not zone or not settings.electricity_maps_api_key:
         fallback = FALLBACK_CARBON_INTENSITY.get(province, 250.0)
-        freshness = "fallback_eccc_grid_factor_2026"
+        freshness = "static_reference:eccc_grid_factor_2026"
         _CACHE.set(cache_key, (fallback, freshness))
         return fallback, {"electricity_maps": freshness, "grid_carbon_source": freshness}
 
@@ -36,10 +36,11 @@ async def get_carbon_intensity_g_per_kwh(province: str) -> tuple[float, dict[str
             payload = resp.json()
         value = float(payload.get("carbonIntensity", FALLBACK_CARBON_INTENSITY.get(province, 250.0)))
         freshness = payload.get("datetime") or datetime.now(timezone.utc).isoformat()
-        _CACHE.set(cache_key, (value, freshness))
-        return value, {"electricity_maps": freshness, "grid_carbon_source": "electricity_maps_live"}
+        live_marker = f"live:{freshness}"
+        _CACHE.set(cache_key, (value, f"cached:{freshness}"))
+        return value, {"electricity_maps": live_marker, "grid_carbon_source": "live:electricity_maps"}
     except Exception:
         fallback = FALLBACK_CARBON_INTENSITY.get(province, 250.0)
-        freshness = "fallback_eccc_grid_factor_2026"
+        freshness = "static_reference:eccc_grid_factor_2026"
         _CACHE.set(cache_key, (fallback, freshness))
         return fallback, {"electricity_maps": freshness, "grid_carbon_source": freshness}

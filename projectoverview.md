@@ -1,33 +1,54 @@
-Dashboard-style app
+# Project Overview
 
-Target user: City councils and planners
+## Problem
 
-Goal: Project the economical, environmental, and sociological effects of a new data centre (with some parameters) being built at a location
+City councils are being asked to approve data centre projects with major infrastructure implications and limited technical visibility.
 
-Tech stack:
-* Frontend: TypeScript + Next.js 16.1.6 + Tailwind v4 + pnpm + 10.32.1
-* **DO NOT USE NPM**
-* Backend: Python 3.14 + FastAPI 0.135 + uv 0.10.10
-* External APIs: MapTiler, Groq (or https://github.com/microsoft/BitNet in place of Groq for LLM tasks)
+## Solution
 
-User flow:
+DataSite Impact Analyzer is a council-facing decision system that quantifies trade-offs using real Canadian datasets, deterministic formulas, and ML signals.
 
-1. City council inputs details about the data center proposal and where it's being built
-2. System takes real Canadian geolocational, energy, sustainability, etc. data
-3. System runs complex, real calculations to measure impact
-4. System generates full report w.r.t. effects of the data center being built on the location
-5. System suggests different courses of action when dealing with the proposal (possible negotiations, etc.)
+It helps councils answer:
+- How much grid stress and rate pressure could this project create?
+- How much water does it consume relative to local supply?
+- Are economic claims realistic versus permanent job creation?
+- What policy conditions should be mandatory before approval?
 
-Important: Data and calculation should be as real and informed as it is feasible to. Minimize features and maximize real data being involved
+## Target Audience
 
-## 0. Project Summary
+- Municipal councils
+- Planning departments
+- Economic development teams
+- Public stakeholders reviewing project transparency
 
-**What it is:** A dynamic negotiation and impact-modeling engine for municipal governments. By combining real-time Canadian open data with predictive ML, it stress-tests proposed data centers against local infrastructure limits, generating a strict, mathematically sound Community Benefit Agreement (CBA) term sheet to protect local taxpayers.
+## Product Experience
 
-**The pitch frame (important for demo):** The era of vague job promises and secret NDAs is over. City councils face intense public backlash over strained grids, water depletion, and spiked utility bills. DataSite shifts the power dynamic. It arms municipalities to stress-test data center proposals and generates a legally actionable Community Benefit Agreement (CBA) playbook—dictating the exact water replenishment targets, local hiring minimums, and grid infrastructure costs the developer must legally commit to before a single shovel hits the dirt.
+1. Proposal Intake
+2. Location Context (map + risk chips + noise radius)
+3. Impact Results (plain-language pillar summaries)
+4. Decision Brief (recommendation, clauses, evidence freshness)
 
-Judging criteria 
+## AI/ML Stack
 
+- Deterministic calculation engine: transparent formulas and evidence pack
+- XGBoost model: real ON + AB historical grid data for strain prediction
+- Railtracks workflow: grounded memo generation, verification, repair, and traceability
+
+## Design Principle
+
+For high-stakes municipal decisions, policy selection must be deterministic and auditable.
+The LLM explains evidence; it does not invent policy.
+
+## Hackathon Fit
+
+- Sustainability impact: grid, water, and community risk are first-class outputs
+- Technical depth: real ingestion, model training/inference, strict API contracts
+- Product value: understandable outputs for non-technical decision makers
+Awards -- Awarded to the team that creates the most innovative AI solution to address environmental or sustainability challenges and drive meaningful real-world impact
+
+and Best use of Railtracks 
+
+Judging Criteria
 Criteria 1: Innovation & Originality
 Focuses on the project's ability to introduce novel concepts, methods, or applications, and to demonstrate creative problem-solving.
 Criteria 2: Technical Complexity & Execution
@@ -36,9 +57,3 @@ Criteria 3: Product Experience & Design
 Overall structure of the project, including visual appeal user experience, and the organization of its architecture and code.
 Criteria 4: Impact & Practical Value
 The project's potential to address real-world problems, create positive change, and contribute to meaningful outcomes.
-
-Award we are aiming for - 
-Google Best Sustainability AI Hack
-1 winner
-Awarded to the team that creates the most innovative AI solution to address environmental or sustainability challenges and drive meaningful real-world impact
-

@@ -1,13 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "leaflet/dist/leaflet.css";
 
 :root {
-  --background: #f5f7f2;
-  --foreground: #0f1720;
+  --background: #f2f6ef;
+  --foreground: #111827;
   --panel: #ffffff;
-  --accent: #0c6b46;
-  --accent-soft: #dff4ea;
+  --accent: #0f766e;
+  --accent-soft: #d9f4ee;
+  --primary: #0f766e;
+  --primary-foreground: #ffffff;
 }
 @custom-variant dark (&:is(.dark *));
 
@@ -60,7 +63,10 @@
 
 body {
   margin: 0;
-  background: radial-gradient(circle at top, #e5efe4 0%, var(--background) 45%);
+  background:
+    radial-gradient(circle at 12% 4%, #d5efe6 0%, transparent 35%),
+    radial-gradient(circle at 88% 12%, #dae7f7 0%, transparent 32%),
+    linear-gradient(180deg, #f8fbf8 0%, var(--background) 100%);
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Segoe UI", sans-serif;
 }
@@ -81,6 +87,42 @@ pre {
 
 .field:focus {
   box-shadow: 0 0 0 3px rgb(110 231 183 / 0.45);
+}
+
+.hero-panel {
+  background:
+    linear-gradient(125deg, rgb(255 255 255 / 0.92), rgb(245 255 250 / 0.88)),
+    radial-gradient(circle at 85% 20%, rgb(16 185 129 / 0.2), transparent 35%);
+  border: 1px solid rgb(148 163 184 / 0.2);
+  box-shadow: 0 18px 50px rgb(15 23 42 / 0.08);
+}
+
+.map-shell {
+  height: 300px;
+}
+
+@media (min-width: 768px) {
+  .map-shell {
+    height: 340px;
+  }
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient {
+  animation: gradient-shift 8s linear infinite;
 }
 
 @layer base {

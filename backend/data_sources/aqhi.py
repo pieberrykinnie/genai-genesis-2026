@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+
+import httpx
 
 from config import get_settings
 
@@ -38,7 +41,6 @@ AQHI_DEFAULT_BY_PROVINCE: dict[str, float] = {
 
 
 def _read_local_aqhi(region_dir: Path) -> list[float]:
-    """Return a list of AQHI float values from all GeoJSON files in region_dir."""
     values: list[float] = []
     if not region_dir.is_dir():
         return values
@@ -55,24 +57,30 @@ def _read_local_aqhi(region_dir: Path) -> list[float]:
 
 
 async def get_aqhi_baseline(province: str) -> tuple[str, dict[str, str]]:
-    """
-    Return (aqhi_label, freshness_dict) for the given 2-letter province code.
-
-    Reads the latest locally downloaded ECCC GeoJSON files from:
-        <data_dir>/aqhi/<region>/*.json
-
-    Falls back to static defaults if no local data is available.
-    """
     settings = get_settings()
-    region = PROVINCE_TO_REGION.get(province.upper())
+    province = province.upper()
 
+    url = "https://dd.weather.gc.ca/air_quality/aqhi/observation/realtime/json"
+    try:
+        async with httpx.AsyncClient(timeout=settings.request_timeout_seconds) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            payload = resp.json()
+        for item in payload:
+            if str(item.get("province_code", "")).upper() == province:
+                value = item.get("aqhi") or AQHI_DEFAULT_BY_PROVINCE.get(province, 3.0)
+                stamp = item.get("forecast_datetime", datetime.now(timezone.utc).isoformat())
+                return str(value), {"aqhi": f"live:{stamp}"}
+    except Exception:
+        pass
+
+    region = PROVINCE_TO_REGION.get(province)
     if region:
         region_dir = settings.data_dir / "aqhi" / region
         values = _read_local_aqhi(region_dir)
         if values:
-            # Use the maximum observed AQHI as a conservative stress baseline.
             peak = max(values)
-            return str(round(peak, 2)), {"aqhi": "local_geojson", "region": region, "stations_read": str(len(values))}
+            return str(round(peak, 2)), {"aqhi": f"static_reference:local_geojson:{region}"}
 
-    default = AQHI_DEFAULT_BY_PROVINCE.get(province.upper(), 3.0)
-    return str(default), {"aqhi": "fallback_static"}
+    default = AQHI_DEFAULT_BY_PROVINCE.get(province, 3.0)
+    return str(default), {"aqhi": "unavailable:aqhi_feed_unreachable"}

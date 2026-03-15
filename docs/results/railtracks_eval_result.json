@@ -1,0 +1,33 @@
+{
+  "scenario_results": [
+    {
+      "name": "ab_high_load",
+      "verification_passed": true,
+      "repair_attempted": false,
+      "issues": [],
+      "workflow_error": null
+    },
+    {
+      "name": "qc_lower_risk",
+      "verification_passed": true,
+      "repair_attempted": false,
+      "issues": [],
+      "workflow_error": null
+    },
+    {
+      "name": "malformed_address_edge_case",
+      "verification_passed": true,
+      "repair_attempted": false,
+      "issues": [],
+      "workflow_error": null
+    }
+  ],
+  "session_files": [
+    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_78fa8685-d51f-4e59-bc16-c2aff2859717.json",
+    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_7f045b3b-dc78-478a-93ef-11b00a24ad8e.json",
+    "E:\\Adi\\Work\\project\\genisys-hack\\genai-genesis-2026\\backend\\.railtracks\\data\\sessions\\council_decision_workflow_87c6b41f-a36f-4944-9b19-61f55c65c26f.json"
+  ],
+  "judge_enabled": false,
+  "note": "Evaluation skipped due to runtime issue: ValidationError: 1 validation error for LLMCall\ntotal_cost\n  Input should be a valid number [type=float_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.12/v/float_type",
+  "evaluation_result": null
+}

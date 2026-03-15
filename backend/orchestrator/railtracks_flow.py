@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
@@ -11,6 +13,7 @@ from calculator.scoring import calc_composite_rag, score_economic, score_environ
 from calculator.sociological import calc_community_vulnerability_index, estimate_noise_radius_m, estimate_population_in_noise_zone
 from config import get_settings
 from data_sources import (
+    fetch_site_fit_csd_context,
     geocode_address,
     get_aqhi_baseline,
     get_capacity_and_surplus,
@@ -19,7 +22,11 @@ from data_sources import (
     get_indigenous_data,
     get_load_context,
     get_statcan_store,
+    get_annual_mean_temp,
+    fetch_site_fit_csd_context,
+    fetch_site_fit_datacenter_context,
 )
+from llm.providers import check_bitnet_health_cached
 from ml.grid_strain.predict import predict_grid_strain
 from ml.site_fit.predict import predict_site_fit
 from models import (
@@ -39,6 +46,7 @@ from policy.clause_catalog import CLAUSE_CATALOG
 from policy.engine import select_policy
 
 ProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 async def _emit(progress_callback: ProgressCallback | None, stage: str, pct: int) -> None:
@@ -69,6 +77,47 @@ def _parse_aqhi_value(aqhi_label: str) -> float:
         return 3.0
 
 
+def _memo_evidence_snapshot(evidence_pack: dict[str, Any]) -> dict[str, Any]:
+    environmental = evidence_pack.get("environmental", {}) if isinstance(evidence_pack, dict) else {}
+    economic = evidence_pack.get("economic", {}) if isinstance(evidence_pack, dict) else {}
+    sociological = evidence_pack.get("sociological", {}) if isinstance(evidence_pack, dict) else {}
+    grid = evidence_pack.get("grid_strain", {}) if isinstance(evidence_pack, dict) else {}
+    public_context = evidence_pack.get("public_context", {}) if isinstance(evidence_pack, dict) else {}
+
+    return {
+        "environmental": {
+            "annual_carbon_tonnes": environmental.get("annual_carbon_tonnes"),
+            "total_water_litres_per_day": environmental.get("total_water_litres_per_day"),
+            "pct_of_municipal_daily_supply": environmental.get("pct_of_municipal_daily_supply"),
+            "grid_score": environmental.get("grid_score"),
+        },
+        "economic": {
+            "direct_permanent_jobs": economic.get("direct_permanent_jobs"),
+            "net_fiscal_impact_10yr_cad": economic.get("net_fiscal_impact_10yr_cad"),
+            "estimated_total_tax_revenue_10yr_cad": economic.get("estimated_total_tax_revenue_10yr_cad"),
+            "jobs_gap": economic.get("jobs_gap"),
+        },
+        "sociological": {
+            "community_vulnerability_index": sociological.get("community_vulnerability_index"),
+            "indigenous_flag": sociological.get("indigenous_flag"),
+            "nearest_first_nation_km": sociological.get("nearest_first_nation_km"),
+            "residential_population_in_noise_zone": sociological.get("residential_population_in_noise_zone"),
+        },
+        "grid_strain": {
+            "strain_probability": grid.get("strain_probability"),
+            "rate_increase_probability": grid.get("rate_increase_probability"),
+            "predicted_strain_level": grid.get("predicted_strain_level"),
+            "confidence": grid.get("confidence"),
+            "model_version": grid.get("model_version"),
+        },
+        "public_context": {
+            "municipality": public_context.get("municipality"),
+            "drought_level": public_context.get("drought_level"),
+            "aqhi": public_context.get("aqhi"),
+        },
+    }
+
+
 async def _fetch_public_context(proposal: ProposalInput) -> tuple[dict[str, Any], dict[str, str]]:
     province = _province_or_default(proposal)
     address = proposal.address or proposal.city or province
@@ -76,25 +125,40 @@ async def _fetch_public_context(proposal: ProposalInput) -> tuple[dict[str, Any]
     carbon_task = get_carbon_intensity_g_per_kwh(province)
     aqhi_task = get_aqhi_baseline(province)
 
-    (geocoded, geocode_freshness), (carbon_intensity, carbon_freshness), (aqhi_label, aqhi_freshness) = await asyncio.gather(
+    (
+        (geocoded, geocode_freshness),
+        (carbon_intensity, carbon_freshness),
+        (aqhi_label, aqhi_freshness),
+    ) = await asyncio.gather(
         geocoded_task,
         carbon_task,
         aqhi_task,
     )
+    
+    lat = float(geocoded.get("lat") or 0.0)
+    lon = float(geocoded.get("lng") or 0.0)
+    
+    # We await this because it uses httpx under the hood. 
+    annual_mean_temp_c = await get_annual_mean_temp(lat, lon)
+    # This is a synchronous calculation relying on cached pandas arrays.
+    site_fit_datacenter_context = fetch_site_fit_datacenter_context(lat, lon)
 
     stats_store = get_statcan_store()
     csd_id = str(geocoded.get("census_subdivision_id") or "")
+    
+    # 🚀 NEW: Retrieve exact area and business count synced identically to training regime
+    csd_features = fetch_site_fit_csd_context(csd_id)
+    area_sq_km = csd_features.get("area_km2", 250.0)
+    business_count = csd_features.get("business_count", 500.0)
+
     demographics, demographics_freshness = stats_store.get_csd_demographics(csd_id, province)
-    total_population = int(float(demographics.get("total_population", 150000.0)))
+    total_population = int(float(demographics.get("total_population", csd_features.get("population", 150000.0))))
     municipal_daily_supply_litres, water_freshness = stats_store.get_municipal_supply_l_day(csd_id, total_population)
 
     capacity_mw, surplus_pct, grid_freshness = get_capacity_and_surplus(province)
     load_context, load_freshness = get_load_context(province)
     drought_level, drought_freshness = get_drought_level(province)
-    indigenous_context, indigenous_freshness = get_indigenous_data().nearest_reserve(
-        float(geocoded.get("lat") or 0.0),
-        float(geocoded.get("lng") or 0.0),
-    )
+    indigenous_context, indigenous_freshness = get_indigenous_data().nearest_reserve(lat, lon)
 
     municipality = geocoded.get("municipality") or proposal.city or (proposal.address or "Unknown location").split(",")[0].strip()
     freshness = {
@@ -124,7 +188,11 @@ async def _fetch_public_context(proposal: ProposalInput) -> tuple[dict[str, Any]
             "load_context": load_context,
             "drought_level": drought_level,
             "indigenous_context": indigenous_context,
-            "area_sq_km": 250.0,
+            "area_sq_km": area_sq_km,
+            "business_count": business_count,
+            "annual_mean_temp_c": annual_mean_temp_c,
+            "distance_to_nearest_dc_km": site_fit_datacenter_context.get("distance_to_nearest_dc_km", 35.0),
+            "dc_count_within_100km": site_fit_datacenter_context.get("dc_count_within_100km", 1.0),
         },
         freshness,
     )
@@ -159,7 +227,9 @@ def _fallback_memo(
         ),
         recommendation_section=(
             f"Council should {recommendation_label}. Triggered policy rules: "
-            f"{', '.join(policy.triggered_rules) if policy.triggered_rules else 'none'}."
+            f"{', '.join(policy.triggered_rules) if policy.triggered_rules else 'none'}.\n"
+            "For citizens: Ask for plain-language public reporting on water, grid, jobs, and noise.\n"
+            "For councillors: Tie approvals and incentives to audited performance milestones and enforceable clauses."
         ),
         clause_narratives=clause_narratives,
         disclaimer="Narrative generated from deterministic fallback calculations; validate against live source refresh before final use.",
@@ -174,43 +244,226 @@ async def _write_memo(
     environmental: EnvironmentalImpact,
     economic: EconomicImpact,
     sociological: SociologicalImpact,
-) -> CouncilMemo:
+) -> tuple[CouncilMemo, dict[str, Any]]:
+    memo_started = time.perf_counter()
+    railtracks_meta: dict[str, Any] = {
+        "railtacks_used": False,
+        "railtacks_workflow": "council_decision_workflow_v1",
+        "railtacks_verification_passed": False,
+        "memo_fallback_reason": "",
+        "memo_llm_calls": 0,
+        "memo_elapsed_ms": 0,
+    }
     settings = get_settings()
-    api_key = (settings.groq_api_key or "").strip()
-    if not api_key or api_key.startswith("test-"):
-        return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score)
+    llm_backend = settings.llm_backend.strip().lower()
+    if llm_backend == "groq":
+        api_key = (settings.groq_api_key or "").strip()
+        llm_ready = bool(api_key) and not api_key.startswith("test-")
+    elif llm_backend == "bitnet":
+        bitnet_configured = bool(settings.bitnet_api_base.strip()) and bool(settings.bitnet_model.strip())
+        if bitnet_configured:
+            health = await check_bitnet_health_cached(settings)
+            llm_ready = bool(health.get("reachable", False))
+            if not llm_ready:
+                railtracks_meta["memo_fallback_reason"] = str(health.get("error") or "bitnet_unreachable")
+        else:
+            llm_ready = False
+            railtracks_meta["memo_fallback_reason"] = "bitnet_not_configured"
+    else:
+        llm_ready = False
+        railtracks_meta["memo_fallback_reason"] = f"unsupported_llm_backend:{llm_backend}"
+
+    if not llm_ready:
+        railtracks_meta["memo_elapsed_ms"] = int((time.perf_counter() - memo_started) * 1000)
+        return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
 
     try:
         import railtracks as rt
 
-        from orchestrator.agents import MemoInput, MemoWriterAgent
-        from orchestrator.validators import validate_memo
+        from orchestrator.agents import get_memo_grounding_verifier_agent, get_memo_writer_agent
+        from orchestrator.validators import coerce_council_memo, coerce_verifier_result, validate_memo_grounding
 
-        memo = await rt.call(
-            MemoWriterAgent,
-            MemoInput(
-                proposal=proposal,
-                evidence_pack=evidence_pack,
-                policy_decision=policy,
-                clause_text={clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids},
-            ),
+        memo_writer_agent = get_memo_writer_agent()
+        memo_grounding_verifier_agent = get_memo_grounding_verifier_agent()
+        verifier_mode = settings.memo_verifier_mode.strip().lower()
+        compact_evidence = _memo_evidence_snapshot(evidence_pack)
+
+        clause_text = {clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids}
+
+        def _memo_writer_prompt(
+            proposal_obj: ProposalInput,
+            evidence_obj: dict[str, Any],
+            policy_obj: PolicyDecision,
+            clause_obj: dict[str, str],
+            validation_errors: list[str] | None = None,
+        ) -> str:
+            lines = [
+                "Generate a council memo as JSON.",
+                "Return JSON only, no markdown and no extra commentary.",
+                "Use only provided evidence and selected clauses.",
+                "In recommendation_section, include the exact recommendation token from policy_decision.recommendation.",
+                "In recommendation_section, include two labeled subsections: 'For citizens:' and 'For councillors:'.",
+                "Use plain language suitable for both residents and councillors.",
+                f"Proposal: {proposal_obj.model_dump_json()}",
+                f"Policy decision: {policy_obj.model_dump_json()}",
+                f"Evidence summary: {evidence_obj}",
+                f"Clause text map: {clause_obj}",
+            ]
+            if validation_errors:
+                lines.append(f"Prior validation issues to fix: {validation_errors}")
+            return "\n".join(lines)
+
+        def _memo_verifier_prompt(
+            proposal_obj: ProposalInput,
+            evidence_obj: dict[str, Any],
+            policy_obj: PolicyDecision,
+            memo_obj: CouncilMemo,
+            clause_obj: dict[str, str],
+        ) -> str:
+            return "\n".join(
+                [
+                    "Verify this memo for grounding and policy alignment and return JSON.",
+                    "Return JSON only with keys: passed, issues.",
+                    "Allowed failure reasons only:",
+                    "1) invented numeric claims not supported by proposal/evidence",
+                    "2) recommendation text misaligned with policy_decision.recommendation",
+                    "3) clause narratives misaligned with selected_clause_ids.",
+                    "Do not fail for style, verbosity, or omitted non-critical fields.",
+                    f"Proposal: {proposal_obj.model_dump_json()}",
+                    f"Policy decision: {policy_obj.model_dump_json()}",
+                    f"Evidence summary: {evidence_obj}",
+                    f"Memo: {memo_obj.model_dump_json()}",
+                    f"Clause text map: {clause_obj}",
+                    "Set passed=true only if there are no issues.",
+                ]
+            )
+
+        @rt.session(name="council_decision_workflow", save_state=True)
+        async def _run_workflow() -> dict[str, Any]:
+            rt.context.update(
+                {
+                    "proposal": proposal.model_dump(mode="python"),
+                    "evidence_pack": compact_evidence,
+                    "policy_decision": policy.model_dump(mode="python"),
+                }
+            )
+
+            llm_call_count = 0
+            stage_timings_ms: dict[str, int] = {}
+
+            async def _timed_llm_call(stage: str, agent: Any, prompt: str) -> Any:
+                nonlocal llm_call_count
+                started = time.perf_counter()
+                llm_call_count += 1
+                response = await rt.call(agent, prompt)
+                stage_timings_ms[stage] = int((time.perf_counter() - started) * 1000)
+                return response
+
+            draft_raw = await _timed_llm_call(
+                "draft_write",
+                memo_writer_agent,
+                _memo_writer_prompt(proposal, compact_evidence, policy, clause_text),
+            )
+            draft, draft_parse_errors = coerce_council_memo(draft_raw)
+            if draft is None:
+                deterministic_ok = False
+                deterministic_errors = list(draft_parse_errors)
+                verifier_passed = False
+                verifier_issues = ["verifier_skipped_due_to_memo_parse_error"]
+                verifier_parse_errors: list[str] = []
+            else:
+                deterministic_ok, deterministic_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
+                should_verify = verifier_mode == "always" or not deterministic_ok
+                if should_verify:
+                    verifier_raw = await _timed_llm_call(
+                        "draft_verify",
+                        memo_grounding_verifier_agent,
+                        _memo_verifier_prompt(proposal, compact_evidence, policy, draft, clause_text),
+                    )
+                    verifier_passed, verifier_issues, verifier_parse_errors = coerce_verifier_result(verifier_raw)
+                else:
+                    verifier_passed, verifier_issues, verifier_parse_errors = True, [], []
+
+            issues = list(deterministic_errors)
+            issues.extend(verifier_issues)
+            issues.extend(verifier_parse_errors)
+            if draft is not None and deterministic_ok and verifier_passed:
+                return {
+                    "memo": draft.model_dump(mode="python"),
+                    "verification_passed": True,
+                    "issues": [],
+                    "llm_call_count": llm_call_count,
+                    "stage_timings_ms": stage_timings_ms,
+                }
+
+            evidence_with_errors = {**compact_evidence, "validation_errors": issues}
+            repaired_raw = await _timed_llm_call(
+                "repair_write",
+                memo_writer_agent,
+                _memo_writer_prompt(
+                    proposal,
+                    evidence_with_errors,
+                    policy,
+                    clause_text,
+                    validation_errors=issues,
+                ),
+            )
+            repaired, repaired_parse_errors = coerce_council_memo(repaired_raw)
+            if repaired is None:
+                return {
+                    "memo": _fallback_memo(
+                        proposal, environmental, economic, sociological, policy, overall_score
+                    ).model_dump(mode="python"),
+                    "verification_passed": False,
+                    "issues": [*issues, *repaired_parse_errors],
+                    "llm_call_count": llm_call_count,
+                    "stage_timings_ms": stage_timings_ms,
+                }
+
+            repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
+            should_verify_repair = verifier_mode == "always" or not repaired_ok
+            if should_verify_repair:
+                repaired_verifier_raw = await _timed_llm_call(
+                    "repair_verify",
+                    memo_grounding_verifier_agent,
+                    _memo_verifier_prompt(proposal, compact_evidence, policy, repaired, clause_text),
+                )
+                repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = coerce_verifier_result(
+                    repaired_verifier_raw
+                )
+            else:
+                repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = True, [], []
+            repaired_issues = list(repaired_errors)
+            repaired_issues.extend(repaired_verifier_issues)
+            repaired_issues.extend(repaired_verifier_parse_errors)
+            return {
+                "memo": repaired.model_dump(mode="python"),
+                "verification_passed": bool(repaired_ok and repaired_verifier_passed),
+                "issues": repaired_issues,
+                "llm_call_count": llm_call_count,
+                "stage_timings_ms": stage_timings_ms,
+            }
+
+        workflow_result, _session = await _run_workflow()
+        railtracks_meta["railtacks_used"] = True
+        railtracks_meta["railtacks_verification_passed"] = bool(workflow_result.get("verification_passed", False))
+        railtracks_meta["memo_llm_calls"] = int(workflow_result.get("llm_call_count", 0))
+        railtracks_meta["memo_stage_timings_ms"] = workflow_result.get("stage_timings_ms", {})
+        railtracks_meta["memo_elapsed_ms"] = int((time.perf_counter() - memo_started) * 1000)
+        logger.info(
+            "memo_workflow_complete backend=%s calls=%s verify_passed=%s elapsed_ms=%s stage_timings=%s",
+            llm_backend,
+            railtracks_meta["memo_llm_calls"],
+            railtracks_meta["railtacks_verification_passed"],
+            railtracks_meta["memo_elapsed_ms"],
+            railtracks_meta.get("memo_stage_timings_ms", {}),
         )
-        ok, errors = validate_memo(memo, evidence_pack, policy)
-        if ok:
-            return memo
-        evidence_with_errors = {**evidence_pack, "validation_errors": errors}
-        memo = await rt.call(
-            MemoWriterAgent,
-            MemoInput(
-                proposal=proposal,
-                evidence_pack=evidence_with_errors,
-                policy_decision=policy,
-                clause_text={clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids},
-            ),
-        )
-        return memo
-    except Exception:
-        return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score)
+        return CouncilMemo(**workflow_result["memo"]), railtracks_meta
+    except Exception as exc:
+        railtracks_meta["memo_fallback_reason"] = f"workflow_exception:{exc.__class__.__name__}"
+        railtracks_meta["memo_elapsed_ms"] = int((time.perf_counter() - memo_started) * 1000)
+        logger.exception("memo_workflow_failed reason=%s", railtracks_meta["memo_fallback_reason"])
+        return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
 
 
 async def assess_flow(
@@ -317,6 +570,7 @@ async def assess_flow(
         nearest_first_nation_km=nearest_first_nation_km,
         air_quality_baseline=str(public_context["aqhi_label"]),
         residential_population_in_noise_zone=residential_population_in_noise_zone,
+        estimated_noise_radius_m=round(noise_radius_m, 2),
     )
 
     await _emit(progress_callback, "running_site_fit_model", 80)
@@ -359,8 +613,9 @@ async def assess_flow(
     await _emit(progress_callback, "selecting_policy", 88)
     policy = select_policy(evidence_pack)
 
+    await _emit(progress_callback, "railtracks_workflow", 92)
     await _emit(progress_callback, "writing_memo", 94)
-    memo = await _write_memo(proposal, evidence_pack, policy, overall_score, environmental, economic, sociological)
+    memo, railtracks_meta = await _write_memo(proposal, evidence_pack, policy, overall_score, environmental, economic, sociological)
 
     report_narrative = "\n\n".join(
         [
@@ -395,5 +650,12 @@ async def assess_flow(
             "site_fit_model": site_fit.model_version,
             "carbon_source": freshness.get("grid_carbon_source", freshness.get("electricity_maps", "unknown")),
             "municipal_water_source": freshness.get("statcan_water", "fallback_population_estimate"),
+            "railtacks_used": railtracks_meta["railtacks_used"],
+            "railtacks_workflow": railtracks_meta["railtacks_workflow"],
+            "railtacks_verification_passed": railtracks_meta["railtacks_verification_passed"],
+            "memo_fallback_reason": railtracks_meta.get("memo_fallback_reason", ""),
+            "memo_llm_calls": railtracks_meta.get("memo_llm_calls", 0),
+            "memo_elapsed_ms": railtracks_meta.get("memo_elapsed_ms", 0),
+            "memo_stage_timings_ms": railtracks_meta.get("memo_stage_timings_ms", {}),
         },
     )
