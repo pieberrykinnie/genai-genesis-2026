@@ -1,8 +1,8 @@
-# DataSite Impact Analyzer - Final Project Spec
+# ClearSite - Final Project Spec
 
 ## 1. Purpose
 
-DataSite Impact Analyzer provides an auditable assessment of proposed data centres for Canadian municipalities.
+ClearSite provides an auditable assessment of proposed data centres for Canadian municipalities.
 
 The system must produce:
 - Quantified environmental, economic, and sociological impact

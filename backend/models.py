@@ -104,6 +104,11 @@ class OverallScore(BaseModel):
     summary_sentence: str
 
 
+class ImpactSummary(BaseModel):
+    resident_bullets: list[str]
+    council_bullets: list[str]
+
+
 class ImpactAssessment(BaseModel):
     proposal_id: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -120,6 +125,7 @@ class ImpactAssessment(BaseModel):
     overall_score: OverallScore
     policy_decision: PolicyDecision | None = None
     memo: CouncilMemo | None = None
+    impact_summary: ImpactSummary | None = None
 
     negotiation_playbook: list[str] = Field(default_factory=list)
     report_narrative: str = ""

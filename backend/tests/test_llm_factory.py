@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from config import Settings
-from orchestrator.llm_factory import make_railtracks_llm
+from orchestrator.llm_factory import _is_json_schema_unsupported_error, make_railtracks_llm
 
 
 def test_make_railtracks_llm_builds_groq_model() -> None:
@@ -62,3 +62,14 @@ def test_make_railtracks_llm_rejects_unknown_backend() -> None:
 
     with pytest.raises(ValueError, match="Unsupported LLM backend"):
         make_railtracks_llm(settings=settings)
+
+
+def test_json_schema_unsupported_detected_through_exception_chain() -> None:
+    root = RuntimeError(
+        "OpenAIException - This model does not support response format `json_schema`. "
+        "See supported models at https://console.groq.com/docs/structured-outputs#supported-models"
+    )
+    wrapped = RuntimeError("LLM Error: Structured LLM call failed")
+    wrapped.__cause__ = root
+
+    assert _is_json_schema_unsupported_error(wrapped) is True

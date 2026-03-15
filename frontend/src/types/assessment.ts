@@ -83,6 +83,10 @@ export interface ImpactAssessment {
   negotiation_playbook: string[];
   report_narrative: string;
   methodology?: Record<string, unknown>;
+  impact_summary?: {
+    resident_bullets: string[];
+    council_bullets: string[];
+  } | null;
 }
 
 export interface StreamEvent {

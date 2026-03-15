@@ -34,6 +34,7 @@ from models import (
     EnvironmentalImpact,
     GridStrainPrediction,
     ImpactAssessment,
+    ImpactSummary,
     Location,
     OverallScore,
     PolicyDecision,
@@ -463,6 +464,124 @@ async def _write_memo(
         railtracks_meta["memo_elapsed_ms"] = int((time.perf_counter() - memo_started) * 1000)
         logger.exception("memo_workflow_failed reason=%s", railtracks_meta["memo_fallback_reason"])
         return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
+
+
+def _fallback_impact_summary(assessment: ImpactAssessment) -> ImpactSummary:
+    env = assessment.environmental
+    eco = assessment.economic
+    soc = assessment.sociological
+    grid = assessment.grid_strain
+    policy = assessment.policy_decision
+
+    rec_label = (policy.recommendation.replace("_", " ") if policy else "under review")
+
+    if env.pct_of_municipal_daily_supply >= 5:
+        water_bullet = (
+            f"Local water use could become a key concern: the facility would consume "
+            f"{env.total_water_litres_per_day:,.0f} L/day, equal to "
+            f"{env.pct_of_municipal_daily_supply:.1f}% of modeled municipal supply."
+        )
+    else:
+        water_bullet = (
+            f"Water-demand pressure appears manageable: the facility would use "
+            f"{env.total_water_litres_per_day:,.0f} L/day "
+            f"({env.pct_of_municipal_daily_supply:.1f}% of modeled municipal supply)."
+        )
+
+    if grid.strain_probability >= 0.2:
+        grid_bullet = (
+            f"There is a meaningful chance of grid pressure ({grid.strain_probability:.0%} strain probability), "
+            f"so questions about power rates and supply reliability are valid."
+        )
+    else:
+        grid_bullet = (
+            f"Grid-pressure risk appears low to moderate "
+            f"({grid.strain_probability:.0%} strain probability) under current assumptions."
+        )
+
+    noise_bullet = (
+        f"An estimated {soc.residential_population_in_noise_zone:,} people live in the modeled "
+        f"noise influence area — ask what mitigation measures are planned."
+    )
+
+    fiscal_bullet = (
+        f"Net 10-year fiscal estimate is ${eco.net_fiscal_impact_10yr_cad:,.0f} "
+        f"including ${eco.estimated_total_tax_revenue_10yr_cad:,.0f} in projected tax revenue."
+    )
+
+    permit_bullet = (
+        "Use annual compliance reporting on water, grid, tax, and jobs outcomes, "
+        "with enforcement triggers for missed commitments."
+        if env.water_score != "red"
+        else "Require enforceable water caps, audit obligations, and clawback clauses before permit approval."
+    )
+
+    return ImpactSummary(
+        resident_bullets=[water_bullet, grid_bullet, noise_bullet],
+        council_bullets=[
+            f"Policy recommendation currently trends to: {rec_label}.",
+            fiscal_bullet,
+            permit_bullet,
+        ],
+    )
+
+
+async def generate_impact_summary(assessment: ImpactAssessment) -> ImpactSummary:
+    """Generate AI-authored resident and council impact bullets for the given assessment.
+
+    Falls back to deterministic bullets if the LLM is unavailable.
+    """
+    settings = get_settings()
+    llm_backend = settings.llm_backend.strip().lower()
+
+    if llm_backend == "groq":
+        api_key = (settings.groq_api_key or "").strip()
+        llm_ready = bool(api_key) and not api_key.startswith("test-")
+    elif llm_backend == "bitnet":
+        bitnet_configured = bool(settings.bitnet_api_base.strip()) and bool(settings.bitnet_model.strip())
+        if bitnet_configured:
+            health = await check_bitnet_health_cached(settings)
+            llm_ready = bool(health.get("reachable", False))
+        else:
+            llm_ready = False
+    else:
+        llm_ready = False
+
+    if not llm_ready:
+        return _fallback_impact_summary(assessment)
+
+    try:
+        import railtracks as rt
+        from orchestrator.agents import get_impact_summary_agent
+        from orchestrator.validators import coerce_impact_summary
+
+        agent = get_impact_summary_agent()
+        compact = _memo_evidence_snapshot(assessment.evidence_pack or {})
+        policy = assessment.policy_decision
+        prompt = "\n".join(
+            [
+                "Generate impact summary bullets as JSON with keys: resident_bullets, council_bullets.",
+                "Return JSON only, no markdown.",
+                "Each list must have exactly 3 complete-sentence bullets.",
+                "Ground every claim in the evidence; do not invent numbers.",
+                f"Evidence summary: {compact}",
+                f"Policy decision: {policy.model_dump_json() if policy else 'none'}",
+                f"Proposal: {assessment.proposal.model_dump_json()}",
+            ]
+        )
+        raw = await rt.call(agent, prompt)
+        summary, parse_errors = coerce_impact_summary(raw)
+        if summary is not None and summary.resident_bullets and summary.council_bullets:
+            return ImpactSummary(
+                resident_bullets=summary.resident_bullets[:3],
+                council_bullets=summary.council_bullets[:3],
+            )
+        if parse_errors:
+            logger.warning("impact_summary_parse_failed errors=%s", parse_errors)
+        return _fallback_impact_summary(assessment)
+    except Exception:
+        logger.exception("impact_summary_agent_failed; using fallback")
+        return _fallback_impact_summary(assessment)
 
 
 async def assess_flow(

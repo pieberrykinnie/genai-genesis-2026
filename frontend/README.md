@@ -1,4 +1,4 @@
-# DataSite Impact Analyzer Frontend
+# ClearSite Frontend
 
 ## Run
 

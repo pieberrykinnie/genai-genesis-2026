@@ -1,26 +1,35 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import dynamic from "next/dynamic";
 import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
+  CloudUpload,
+  FileCheck,
   Landmark,
   Loader2,
+  MapPin,
   ShieldCheck,
-  Upload,
   UserRound,
   XCircle,
+  Zap,
+  Droplets,
+  TrendingUp,
+  BarChart3,
+  AlertTriangle,
+  Ban,
+  Clock,
+  ThumbsUp,
 } from "lucide-react";
 
-import { AnimatedGradientText } from "@/components/magicui/animated-gradient-text";
 import { BlurFade } from "@/components/magicui/blur-fade";
-import { ShinyButton } from "@/components/magicui/shiny-button";
 import { Button } from "@/components/ui/button";
 import type {
   DataCentreProposal,
-  ExtractProposalResponse,
   ImpactAssessment,
   MemoJobResultResponse,
   MemoJobStatusResponse,
@@ -28,175 +37,250 @@ import type {
   StreamEvent,
 } from "@/types/assessment";
 
+/* ── Map (dynamic, SSR-off) ──────────────────────────────── */
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
-
 const LocationContextMap = dynamic(
   () => import("@/components/location-context-map").then((mod) => mod.LocationContextMap),
   {
     ssr: false,
-    loading: () => <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading map...</div>,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-sm text-slate-400">Loading map…</div>
+    ),
   },
 );
 
-const PROVINCES: DataCentreProposal["province"][] = ["ON", "AB", "BC", "QC", "MB", "SK", "NS", "NB", "NL", "PE"];
-
-const DEFAULT_PROPOSAL: DataCentreProposal = {
-  address: "Municipal District of Greenview, Grande Prairie, Alberta",
+/* ── Demo payloads (hardcoded for hackathon demo) ────────── */
+const PDF_DEMO_PROPOSAL: DataCentreProposal = {
+  address: "Indus, Rocky View County, Alberta",
   province: "AB",
-  it_load_mw: 200,
-  pue: 1.5,
-  wue: 1.9,
-  cooling_type: "evaporative",
+  it_load_mw: 1200,
+  pue: 1.245,
+  wue: 0.052,
+  cooling_type: "air",
   facility_type: "hyperscale",
-  capex_cad: 5000,
-  construction_months: 36,
+  capex_cad: 34800,
+  construction_months: 24,
   has_onsite_generation: true,
   renewable_ppa: false,
 };
 
-type StepId = 1 | 2 | 3 | 4;
-type Persona = "citizen" | "councillor";
-type IntakeMode = "manual" | "upload";
-type MemoState = "idle" | "queued" | "running" | "ready" | "failed";
-type ScenarioId = "baseline_ab" | "balanced_qc" | "beacon_high_load";
-
-interface ScenarioPreset {
-  id: ScenarioId;
-  label: string;
-  description: string;
-  proposal: DataCentreProposal;
-  expectedSignals: string[];
-}
-
-const PRESETS: ScenarioPreset[] = [
-  {
-    id: "baseline_ab",
-    label: "Baseline AB",
-    description: "Reference 200 MW Alberta profile for normal demo flow.",
-    proposal: DEFAULT_PROPOSAL,
-    expectedSignals: [
-      "Low-to-moderate grid strain probability",
-      "Water share should stay under 5%",
-      "Decision is usually defer or conditional approval",
-    ],
-  },
-  {
-    id: "balanced_qc",
-    label: "Balanced QC",
-    description: "Lower-intensity Quebec profile to show a milder outcome.",
-    proposal: {
-      address: "Levis, Quebec, Canada",
-      province: "QC",
-      it_load_mw: 100,
-      pue: 1.3,
-      wue: 0.8,
-      cooling_type: "liquid_immersion",
-      facility_type: "enterprise",
-      capex_cad: 800,
-      construction_months: 24,
-      has_onsite_generation: false,
-      renewable_ppa: true,
-    },
-    expectedSignals: [
-      "Lower environmental burden than high-load AB",
-      "Low grid strain probability",
-      "Fewer hard policy triggers",
-    ],
-  },
-  {
-    id: "beacon_high_load",
-    label: "Beacon-like High Load",
-    description: "Stress-case based on 4 x 300 MW (about 1200 MW) scale from the sample proposal.",
-    proposal: {
-      address: "Grande Prairie, Alberta, Canada",
-      province: "AB",
-      it_load_mw: 1200,
-      pue: 1.6,
-      wue: 2.2,
-      cooling_type: "evaporative",
-      facility_type: "hyperscale",
-      capex_cad: 18000,
-      construction_months: 60,
-      has_onsite_generation: true,
-      renewable_ppa: false,
-    },
-    expectedSignals: [
-      "Higher water-share pressure",
-      "Higher grid strain and stronger policy constraints",
-      "More difficult recommendation path",
-    ],
-  },
-];
-
-const STEP_COPY: Record<StepId, { title: string; subtitle: string }> = {
-  1: {
-    title: "1. Proposal Intake",
-    subtitle: "Enter project assumptions manually or upload a proposal PDF to prefill fields.",
-  },
-  2: {
-    title: "2. Location Context",
-    subtitle: "Map view plus plain-language local pressure indicators.",
-  },
-  3: {
-    title: "3. Impact Results",
-    subtitle: "Understand what the numbers mean for residents and council decisions.",
-  },
-  4: {
-    title: "4. Decision Brief",
-    subtitle: "Persona-based actions for citizens and councillors.",
-  },
+const MANUAL_DEFAULT_PROPOSAL: DataCentreProposal = {
+  address: "Brockville, Ontario",
+  province: "ON",
+  it_load_mw: 240,
+  pue: 1.31,
+  wue: 0.029,
+  cooling_type: "hybrid",
+  facility_type: "colocation",
+  capex_cad: 5400,
+  construction_months: 18,
+  has_onsite_generation: false,
+  renewable_ppa: true,
 };
 
+/* ── Types ───────────────────────────────────────────────── */
+type StepId = 1 | 2 | 3 | 4;
+type Persona = "citizen" | "councillor";
+type MemoState = "idle" | "queued" | "running" | "ready" | "failed";
+type IntakeMode = "upload" | "manual";
+type ExtractParamKey = keyof DataCentreProposal;
+
+const PARAM_EXTRACTION_SEQUENCE: { key: ExtractParamKey; label: string; delayMs: number }[] = [
+  { key: "address", label: "Location", delayMs: 420 },
+  { key: "province", label: "Province", delayMs: 300 },
+  { key: "it_load_mw", label: "IT Load", delayMs: 560 },
+  { key: "pue", label: "PUE", delayMs: 350 },
+  { key: "wue", label: "WUE", delayMs: 340 },
+  { key: "cooling_type", label: "Cooling", delayMs: 460 },
+  { key: "facility_type", label: "Facility Type", delayMs: 430 },
+  { key: "capex_cad", label: "CAPEX", delayMs: 520 },
+  { key: "construction_months", label: "Construction", delayMs: 480 },
+  { key: "has_onsite_generation", label: "On-site generation", delayMs: 320 },
+  { key: "renewable_ppa", label: "Renewable PPA", delayMs: 310 },
+];
+
+const ALL_PARAM_KEYS = PARAM_EXTRACTION_SEQUENCE.map((item) => item.key);
+
+const STEPS: { id: StepId; label: string; icon: React.ReactNode }[] = [
+  { id: 1, label: "Proposal Intake", icon: <CloudUpload className="size-3.5" /> },
+  { id: 2, label: "Location Context", icon: <MapPin className="size-3.5" /> },
+  { id: 3, label: "Impact Results", icon: <BarChart3 className="size-3.5" /> },
+  { id: 4, label: "Decision Brief", icon: <ShieldCheck className="size-3.5" /> },
+];
+
+/* ── SSE stage labels ────────────────────────────────────── */
+const STAGE_LABELS: Record<string, string> = {
+  starting: "Initializing…",
+  proposal_ingest: "Ingesting proposal…",
+  fetching_public_data: "Fetching public datasets…",
+  running_calculations: "Running impact calculations…",
+  running_grid_model: "Running ML grid strain model…",
+  running_site_fit_model: "Evaluating site fit…",
+  selecting_policy: "Selecting policy framework…",
+  railtracks_workflow: "Running Railtracks AI workflow…",
+  writing_memo: "Generating council memo…",
+  complete: "Assessment complete",
+  error: "Error occurred",
+};
+
+/* ════════════════════════════════════════════════════════════
+   MAIN PAGE COMPONENT
+   ════════════════════════════════════════════════════════════ */
 export default function Home() {
-  const [proposal, setProposal] = useState<DataCentreProposal>(DEFAULT_PROPOSAL);
+  /* ── Core state ──────────────────────────────────────────── */
+  const [proposal, setProposal] = useState<DataCentreProposal | null>(null);
   const [assessment, setAssessment] = useState<ImpactAssessment | null>(null);
   const [progress, setProgress] = useState<StreamEvent | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<StepId>(1);
   const [persona, setPersona] = useState<Persona>("citizen");
+  const [intakeMode, setIntakeMode] = useState<IntakeMode>("upload");
 
-  const [intakeMode, setIntakeMode] = useState<IntakeMode>("manual");
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [extracting, setExtracting] = useState(false);
-  const [extractionMeta, setExtractionMeta] = useState<ExtractProposalResponse["_extraction"] | null>(null);
-  const [extractError, setExtractError] = useState<string | null>(null);
+  /* ── File upload state ───────────────────────────────────── */
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [fieldsRevealed, setFieldsRevealed] = useState(false);
+  const [processingParamLabel, setProcessingParamLabel] = useState<string | null>(null);
+  const [revealedParamKeys, setRevealedParamKeys] = useState<ExtractParamKey[]>([]);
+  const [autofillPreview, setAutofillPreview] = useState<Partial<DataCentreProposal>>({});
+  const [lastFilledParamKey, setLastFilledParamKey] = useState<ExtractParamKey | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const extractionRunIdRef = useRef(0);
 
-  const [selectedPreset, setSelectedPreset] = useState<ScenarioId>("baseline_ab");
-  const [expectationSummary, setExpectationSummary] = useState<string | null>(null);
-
+  /* ── Memo state ──────────────────────────────────────────── */
   const [memoState, setMemoState] = useState<MemoState>("idle");
   const [memoJobId, setMemoJobId] = useState<string | null>(null);
   const [memoError, setMemoError] = useState<string | null>(null);
 
+  /* ── Impact summary state ────────────────────────────────── */
+  type ImpactSummary = { resident_bullets: string[]; council_bullets: string[] };
+  type SummaryState = "idle" | "loading" | "ready" | "failed";
+  const [impactSummary, setImpactSummary] = useState<ImpactSummary | null>(null);
+  const [summaryState, setSummaryState] = useState<SummaryState>("idle");
+
   const unlockedSteps = useMemo(() => {
-    return {
-      1: true,
-      2: Boolean(assessment),
-      3: Boolean(assessment),
-      4: Boolean(assessment),
-    } as const;
+    return { 1: true, 2: Boolean(assessment), 3: Boolean(assessment), 4: Boolean(assessment) } as const;
   }, [assessment]);
 
   const canGoNext = currentStep < 4 && unlockedSteps[(currentStep + 1) as StepId];
+  const allParamsReady = intakeMode === "manual"
+    ? Boolean(proposal)
+    : PARAM_EXTRACTION_SEQUENCE.every((item) => revealedParamKeys.includes(item.key));
 
-  useEffect(() => {
-    const preset = PRESETS.find((item) => item.id === selectedPreset);
-    if (!preset) return;
-    setProposal(preset.proposal);
-    setExtractionMeta(null);
-    setExtractError(null);
-  }, [selectedPreset]);
+  const updateProposalField = useCallback(
+    <K extends keyof DataCentreProposal>(key: K, value: DataCentreProposal[K]) => {
+      setProposal((prev) => {
+        if (!prev) return prev;
+        return { ...prev, [key]: value };
+      });
+    },
+    [],
+  );
 
+  const switchIntakeMode = useCallback((nextMode: IntakeMode) => {
+    extractionRunIdRef.current += 1;
+    setIntakeMode(nextMode);
+    setCurrentStep(1);
+    setAssessment(null);
+    setProgress(null);
+    setError(null);
+    setLastFilledParamKey(null);
+    setImpactSummary(null);
+    setSummaryState("idle");
+
+    if (nextMode === "manual") {
+      setUploadedFileName(null);
+      setProcessingParamLabel(null);
+      setAutofillPreview({});
+      setProposal(MANUAL_DEFAULT_PROPOSAL);
+      setFieldsRevealed(true);
+      setRevealedParamKeys(ALL_PARAM_KEYS);
+      return;
+    }
+
+    setProposal(null);
+    setFieldsRevealed(false);
+    setRevealedParamKeys([]);
+    setAutofillPreview({});
+    setProcessingParamLabel(null);
+    setUploadedFileName(null);
+  }, []);
+
+  /* ── File drop handler ───────────────────────────────────── */
+  const handleFileAccepted = useCallback(async (file: File) => {
+    const runId = extractionRunIdRef.current + 1;
+    extractionRunIdRef.current = runId;
+
+    setIntakeMode("upload");
+    setUploadedFileName(file.name);
+    setProposal(null);
+    setAssessment(null);
+    setProgress(null);
+    setError(null);
+    setCurrentStep(1);
+    setFieldsRevealed(true);
+    setProcessingParamLabel("Initializing extraction");
+    setRevealedParamKeys([]);
+    setAutofillPreview({});
+    setLastFilledParamKey(null);
+
+    await sleep(280);
+
+    for (const item of PARAM_EXTRACTION_SEQUENCE) {
+      if (extractionRunIdRef.current !== runId) return;
+      setProcessingParamLabel(`Extracting ${item.label}`);
+      await sleep(item.delayMs);
+      if (extractionRunIdRef.current !== runId) return;
+      setAutofillPreview((prev) => ({ ...prev, [item.key]: PDF_DEMO_PROPOSAL[item.key] }));
+      setRevealedParamKeys((prev) => (prev.includes(item.key) ? prev : [...prev, item.key]));
+      setLastFilledParamKey(item.key);
+      window.setTimeout(() => {
+        setLastFilledParamKey((prev) => (prev === item.key ? null : prev));
+      }, 450);
+    }
+
+    if (extractionRunIdRef.current === runId) {
+      setProposal(PDF_DEMO_PROPOSAL);
+      setProcessingParamLabel(null);
+    }
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        void handleFileAccepted(file);
+      }
+    },
+    [handleFileAccepted],
+  );
+
+  const onFileInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        void handleFileAccepted(file);
+      }
+    },
+    [handleFileAccepted],
+  );
+
+  /* ── Assessment submission ───────────────────────────────── */
   const onSubmitAssessment = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!proposal || !allParamsReady) return;
+
     setLoading(true);
     setError(null);
     setAssessment(null);
-    setExpectationSummary(null);
     setMemoState("idle");
     setMemoJobId(null);
     setMemoError(null);
+    setImpactSummary(null);
+    setSummaryState("idle");
     setProgress({ stage: "starting", pct: 0 });
 
     const submittedProposal: DataCentreProposal = { ...proposal };
@@ -241,8 +325,8 @@ export default function Home() {
           if (evt.stage === "complete" && evt.result) {
             setAssessment(evt.result);
             setCurrentStep(2);
-            setExpectationSummary(evaluateScenarioMatch(selectedPreset, evt.result));
             void startMemoJob(submittedProposal);
+            void fetchImpactSummary(evt.result);
           }
         }
       }
@@ -253,6 +337,26 @@ export default function Home() {
     }
   };
 
+  /* ── Impact summary fetch ────────────────────────────────── */
+  const fetchImpactSummary = async (completedAssessment: ImpactAssessment) => {
+    setSummaryState("loading");
+    setImpactSummary(null);
+    try {
+      const res = await fetch("/api/impact-summary", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(completedAssessment),
+      });
+      if (!res.ok) throw new Error(`impact_summary_${res.status}`);
+      const data = (await res.json()) as ImpactSummary;
+      setImpactSummary(data);
+      setSummaryState("ready");
+    } catch {
+      setSummaryState("failed");
+    }
+  };
+
+  /* ── Memo job polling ────────────────────────────────────── */
   const startMemoJob = async (payload: DataCentreProposal) => {
     setMemoState("queued");
     setMemoError(null);
@@ -269,13 +373,10 @@ export default function Home() {
       }
 
       const submitData = (await submitRes.json()) as MemoJobSubmitResponse;
-      if (!submitData.job_id) {
-        throw new Error("memo_job_id_missing");
-      }
+      if (!submitData.job_id) throw new Error("memo_job_id_missing");
 
       setMemoJobId(submitData.job_id);
       setMemoState(submitData.status === "running" ? "running" : "queued");
-
       await pollMemoJob(submitData.job_id);
     } catch (err) {
       setMemoState("failed");
@@ -286,20 +387,12 @@ export default function Home() {
   const pollMemoJob = async (jobId: string) => {
     for (let i = 0; i < 90; i += 1) {
       await sleep(2000);
-
       const statusRes = await fetch(`/api/memo-jobs/${jobId}`, { cache: "no-store" });
       if (!statusRes.ok) continue;
 
       const statusData = (await statusRes.json()) as MemoJobStatusResponse;
-
-      if (statusData.status === "queued") {
-        setMemoState("queued");
-        continue;
-      }
-      if (statusData.status === "running") {
-        setMemoState("running");
-        continue;
-      }
+      if (statusData.status === "queued") { setMemoState("queued"); continue; }
+      if (statusData.status === "running") { setMemoState("running"); continue; }
       if (statusData.status === "failed") {
         setMemoState("failed");
         setMemoError(statusData.error ?? "Memo generation failed.");
@@ -328,13 +421,7 @@ export default function Home() {
             ...(result.methodology ?? {}),
             memo_deferred: false,
           };
-
-          return {
-            ...prev,
-            memo: mergedMemo,
-            report_narrative: mergedNarrative,
-            methodology: mergedMethodology,
-          };
+          return { ...prev, memo: mergedMemo, report_narrative: mergedNarrative, methodology: mergedMethodology };
         });
 
         setMemoState("ready");
@@ -347,449 +434,574 @@ export default function Home() {
     setMemoError("Memo generation timed out. Core assessment is still available.");
   };
 
-  const onExtractFromPdf = async () => {
-    if (!pdfFile) {
-      setExtractError("Select a PDF file first.");
-      return;
-    }
-
-    setExtracting(true);
-    setExtractError(null);
-    setExtractionMeta(null);
-
-    try {
-      const form = new FormData();
-      form.append("file", pdfFile);
-
-      const res = await fetch("/api/extract-proposal", {
-        method: "POST",
-        body: form,
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt || "Unable to extract proposal from PDF.");
-      }
-
-      const extracted = (await res.json()) as ExtractProposalResponse;
-      const next = mergeExtractedProposal(proposal, extracted);
-      setProposal(next);
-      setExtractionMeta(extracted._extraction ?? null);
-      setIntakeMode("manual");
-    } catch (err) {
-      setExtractError(err instanceof Error ? err.message : "PDF extraction failed.");
-    } finally {
-      setExtracting(false);
-    }
-  };
-
+  /* ════════════════════════════════════════════════════════════
+     RENDER
+     ════════════════════════════════════════════════════════════ */
   return (
-    <main className="min-h-screen px-4 py-6 md:px-8 md:py-8">
+    <main className="min-h-screen px-4 py-5 md:px-8 md:py-6">
       <div className="mx-auto w-full max-w-6xl">
-        <header className="hero-panel rounded-3xl border px-5 py-5 md:px-8 md:py-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-900/80">Data Centre Public Impact Tool</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
-            Assessment <AnimatedGradientText speed={1.6}>Workspace</AnimatedGradientText>
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-700">
-            Built for residents and city councils. Start with assumptions or upload a proposal PDF, then review map context, impacts, and action-ready recommendations.
+        {/* ── Header ─────────────────────────────────────── */}
+        <header className="hero-panel rounded-2xl px-6 py-5 md:px-8 md:py-6">
+          <div className="flex items-center">
+            <img
+              src="/clearsite_logo.png"
+              alt="ClearSite: AI-Powered Data Centre Impact Assessment"
+              className="h-24 w-auto object-contain md:h-28"
+            />
+          </div>
+          <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-600 md:text-base">
+            Quantified environmental, economic, and sociological impact analysis for proposed Canadian data centres — built for residents and city councils.
           </p>
         </header>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
-          <nav className="rounded-2xl border border-slate-200 bg-white/90 p-3">
-            <ol className="space-y-2">
-              {(Object.keys(STEP_COPY) as unknown as StepId[]).map((step) => {
-                const active = currentStep === step;
-                const unlocked = unlockedSteps[step];
-                const complete = step < currentStep && unlocked;
+        {/* ── Step indicator ──────────────────────────────── */}
+        <nav className="mt-5 flex items-center rounded-xl glass-strong px-4 py-3" aria-label="Assessment steps">
+          {STEPS.map((step, idx) => {
+            const active = currentStep === step.id;
+            const complete = step.id < currentStep && unlockedSteps[step.id];
+            const unlocked = unlockedSteps[step.id];
+            return (
+              <Fragment key={step.id}>
+                <button
+                  type="button"
+                  disabled={!unlocked}
+                  onClick={() => unlocked && setCurrentStep(step.id)}
+                  className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
+                    active
+                      ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                      : complete
+                        ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        : unlocked
+                          ? "text-slate-500 hover:bg-slate-100"
+                          : "cursor-not-allowed text-slate-300"
+                  }`}
+                >
+                  {complete ? <CheckCircle2 className="size-3.5" /> : step.icon}
+                  <span className="hidden sm:inline">{step.label}</span>
+                  <span className="sm:hidden">{step.id}</span>
+                </button>
+                {idx < STEPS.length - 1 && (
+                  <div className={`mx-2 h-[2px] w-8 shrink-0 md:w-14 ${complete ? "bg-emerald-600" : "bg-emerald-500/15"}`} />
+                )}
+              </Fragment>
+            );
+          })}
+        </nav>
 
-                return (
-                  <li key={step}>
-                    <button
-                      type="button"
-                      disabled={!unlocked}
-                      onClick={() => unlocked && setCurrentStep(step)}
-                      className={`w-full rounded-xl border px-3 py-2 text-left transition ${
-                        active
-                          ? "border-teal-400 bg-teal-50"
-                          : complete
-                            ? "border-emerald-300 bg-emerald-50"
-                            : unlocked
-                              ? "border-slate-200 bg-white hover:bg-slate-50"
-                              : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-                      }`}
-                    >
-                      <p className="text-sm font-semibold text-slate-900">
-                        {step}. {STEP_COPY[step].title.replace(/^\d+\.\s/, "")}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-600">{STEP_COPY[step].subtitle}</p>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-          </nav>
-
-          <BlurFade key={currentStep} className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm md:p-6">
-            <SectionTitle title={STEP_COPY[currentStep].title} subtitle={STEP_COPY[currentStep].subtitle} />
-
+        {/* ── Content area ────────────────────────────────── */}
+        <div className="mt-5">
+          <BlurFade key={currentStep} className="glass-strong rounded-2xl p-5 md:p-7">
+            {/* ═══ STEP 1: PROPOSAL INTAKE ═══ */}
             {currentStep === 1 && (
-              <section className="mt-4 space-y-4">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Scenario presets (demo)</p>
-                  <div className="mt-2 grid gap-2 md:grid-cols-3">
-                    {PRESETS.map((preset) => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => setSelectedPreset(preset.id)}
-                        className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
-                          selectedPreset === preset.id
-                            ? "border-teal-400 bg-teal-50"
-                            : "border-slate-200 bg-white hover:bg-slate-50"
-                        }`}
-                      >
-                        <p className="font-semibold text-slate-900">{preset.label}</p>
-                        <p className="mt-1 text-xs text-slate-600">{preset.description}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <section className="animate-fade-in">
+                <SectionHeader
+                  title="Proposal Intake"
+                  subtitle="Upload a proposal PDF or enter parameters manually to begin the impact assessment."
+                />
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
+                <div className="mt-5 inline-flex rounded-xl border border-emerald-200/60 bg-emerald-50/70 p-1">
+                  <button
                     type="button"
-                    variant={intakeMode === "manual" ? "default" : "outline"}
-                    onClick={() => setIntakeMode("manual")}
+                    onClick={() => switchIntakeMode("upload")}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                      intakeMode === "upload" ? "bg-emerald-600 text-white" : "text-emerald-700 hover:bg-emerald-100"
+                    }`}
                   >
-                    Manual input
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={intakeMode === "upload" ? "default" : "outline"}
-                    onClick={() => setIntakeMode("upload")}
-                  >
-                    <Upload className="size-4" />
                     Upload PDF
-                  </Button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchIntakeMode("manual")}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                      intakeMode === "manual" ? "bg-emerald-600 text-white" : "text-emerald-700 hover:bg-emerald-100"
+                    }`}
+                  >
+                    Manual Entry
+                  </button>
                 </div>
 
-                {intakeMode === "upload" && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-sm font-medium text-slate-900">Upload proposal PDF and prefill fields</p>
-                    <p className="mt-1 text-xs text-slate-600">If LLM extraction is unavailable, deterministic regex extraction is used automatically.</p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <input
-                        type="file"
-                        accept="application/pdf"
-                        onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
-                        className="field max-w-sm"
-                      />
-                      <Button type="button" onClick={onExtractFromPdf} disabled={extracting || !pdfFile}>
-                        {extracting ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-                        {extracting ? "Extracting..." : "Extract details"}
-                      </Button>
+                {/* Drop zone */}
+                {intakeMode === "upload" && !uploadedFileName && (
+                  <div
+                    className={`drop-zone mt-5 flex flex-col items-center justify-center px-6 py-14 text-center ${
+                      dragOver ? "drag-over" : ""
+                    }`}
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={onDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <div className="rounded-2xl bg-emerald-50 p-4">
+                      <CloudUpload className="size-10 text-emerald-500" />
                     </div>
-                    {extractionMeta && (
-                      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
-                        <p>
-                          Mode: <strong>{extractionMeta.mode}</strong> | Confidence: <strong>{extractionMeta.confidence}</strong>
-                        </p>
-                        {extractionMeta.missing_fields.length > 0 && (
-                          <p className="mt-1">Missing fields: {extractionMeta.missing_fields.join(", ")}</p>
-                        )}
-                        {extractionMeta.warnings.length > 0 && (
-                          <ul className="mt-1 list-disc pl-5">
-                            {extractionMeta.warnings.map((w) => (
-                              <li key={w}>{w}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    )}
-                    {extractError && <ErrorText text={extractError} />}
+                    <p className="mt-4 text-base font-semibold text-slate-800">
+                      Drop your proposal PDF here
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      or click to browse files
+                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      onChange={onFileInput}
+                      className="hidden"
+                    />
                   </div>
                 )}
 
-                <form onSubmit={onSubmitAssessment} className="space-y-4">
-                  <Field label="Project address">
-                    <input
-                      className="field"
-                      value={proposal.address}
-                      onChange={(e) => setProposal((prev) => ({ ...prev, address: e.target.value }))}
-                    />
-                  </Field>
+                {/* File accepted */}
+                {intakeMode === "upload" && uploadedFileName && (
+                  <div className="mt-5 animate-scale-in">
+                    <div className="flex items-center gap-3 rounded-xl bg-emerald-50/80 border border-emerald-200/50 px-4 py-3">
+                      {processingParamLabel ? (
+                        <Loader2 className="size-5 animate-spin text-emerald-600" />
+                      ) : (
+                        <FileCheck className="size-5 text-emerald-600" />
+                      )}
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-800">{uploadedFileName}</p>
+                        <p className="text-xs text-emerald-600">
+                          {processingParamLabel
+                            ? `${processingParamLabel}…`
+                            : "Proposal parameters extracted successfully"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Province">
-                      <select
-                        className="field"
-                        value={proposal.province}
-                        onChange={(e) => setProposal((prev) => ({ ...prev, province: e.target.value as DataCentreProposal["province"] }))}
+                {/* Extracted fields */}
+                {intakeMode === "upload" && fieldsRevealed && (
+                  <div className="mt-5 space-y-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Live Extraction Preview
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {allParamsReady
+                        ? "All proposal parameters ready for assessment."
+                        : `Processed ${revealedParamKeys.length}/${PARAM_EXTRACTION_SEQUENCE.length} parameters`}
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <ParamCard
+                        label="Location"
+                        value={String(autofillPreview.address ?? "")}
+                        ready={revealedParamKeys.includes("address")}
+                        flash={lastFilledParamKey === "address"}
+                      />
+                      <ParamCard
+                        label="Province"
+                        value={String(autofillPreview.province ?? "")}
+                        ready={revealedParamKeys.includes("province")}
+                        flash={lastFilledParamKey === "province"}
+                      />
+                      <ParamCard
+                        label="IT Load"
+                        value={`${Number(autofillPreview.it_load_mw ?? 0).toLocaleString()} MW`}
+                        ready={revealedParamKeys.includes("it_load_mw")}
+                        flash={lastFilledParamKey === "it_load_mw"}
+                      />
+                      <ParamCard
+                        label="PUE"
+                        value={Number(autofillPreview.pue ?? 0).toString()}
+                        ready={revealedParamKeys.includes("pue")}
+                        flash={lastFilledParamKey === "pue"}
+                      />
+                      <ParamCard
+                        label="WUE"
+                        value={Number(autofillPreview.wue ?? 0).toString()}
+                        ready={revealedParamKeys.includes("wue")}
+                        flash={lastFilledParamKey === "wue"}
+                      />
+                      <ParamCard
+                        label="Cooling"
+                        value={String(autofillPreview.cooling_type ?? "").replace("_", " ")}
+                        ready={revealedParamKeys.includes("cooling_type")}
+                        flash={lastFilledParamKey === "cooling_type"}
+                      />
+                      <ParamCard
+                        label="Facility Type"
+                        value={String(autofillPreview.facility_type ?? "")}
+                        ready={revealedParamKeys.includes("facility_type")}
+                        flash={lastFilledParamKey === "facility_type"}
+                      />
+                      <ParamCard
+                        label="CAPEX"
+                        value={`$${Number(autofillPreview.capex_cad ?? 0).toLocaleString()}M CAD`}
+                        ready={revealedParamKeys.includes("capex_cad")}
+                        flash={lastFilledParamKey === "capex_cad"}
+                      />
+                      <ParamCard
+                        label="Construction"
+                        value={`${Number(autofillPreview.construction_months ?? 0)} months`}
+                        ready={revealedParamKeys.includes("construction_months")}
+                        flash={lastFilledParamKey === "construction_months"}
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap gap-3 animate-fade-in-up">
+                      <ParamBadge
+                        label="On-site generation"
+                        active={Boolean(autofillPreview.has_onsite_generation)}
+                        ready={revealedParamKeys.includes("has_onsite_generation")}
+                      />
+                      <ParamBadge
+                        label="Renewable PPA"
+                        active={Boolean(autofillPreview.renewable_ppa)}
+                        ready={revealedParamKeys.includes("renewable_ppa")}
+                      />
+                    </div>
+
+                    {/* Run assessment CTA */}
+                    <form onSubmit={onSubmitAssessment} className="pt-2 animate-fade-in-up">
+                      <button
+                        type="submit"
+                        disabled={loading || !allParamsReady}
+                        className="group relative w-full overflow-hidden rounded-xl bg-emerald-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 hover:shadow-emerald-600/35 disabled:opacity-70 disabled:cursor-not-allowed md:w-auto md:min-w-[280px]"
                       >
-                        {PROVINCES.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="IT load (MW)">
-                      <input
-                        className="field"
-                        type="number"
-                        value={proposal.it_load_mw}
-                        onChange={(e) => setProposal((prev) => ({ ...prev, it_load_mw: Number(e.target.value) }))}
-                      />
-                    </Field>
+                        <span className="relative z-10 flex items-center justify-center gap-2">
+                          {loading ? (
+                            <>
+                              <Loader2 className="size-5 animate-spin" />
+                              Running assessment…
+                            </>
+                          ) : !allParamsReady ? (
+                            <>
+                              <Loader2 className="size-5 animate-spin" />
+                              Finalizing parameter extraction…
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="size-5" />
+                              Run Impact Assessment
+                            </>
+                          )}
+                        </span>
+                      </button>
+                    </form>
                   </div>
+                )}
 
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <Field label="PUE (power efficiency)">
-                      <input
-                        className="field"
-                        type="number"
-                        step="0.01"
-                        value={proposal.pue}
-                        onChange={(e) => setProposal((prev) => ({ ...prev, pue: Number(e.target.value) }))}
-                      />
-                    </Field>
-                    <Field label="WUE (water efficiency)">
-                      <input
-                        className="field"
-                        type="number"
-                        step="0.01"
-                        value={proposal.wue}
-                        onChange={(e) => setProposal((prev) => ({ ...prev, wue: Number(e.target.value) }))}
-                      />
-                    </Field>
-                    <Field label="CAPEX (CAD M)">
-                      <input
-                        className="field"
-                        type="number"
-                        value={proposal.capex_cad}
-                        onChange={(e) => setProposal((prev) => ({ ...prev, capex_cad: Number(e.target.value) }))}
-                      />
-                    </Field>
-                  </div>
+                {intakeMode === "manual" && proposal && (
+                  <div className="mt-5 space-y-4 animate-fade-in-up">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Manual Parameters
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Default values are prefilled and can be edited before running assessment.
+                    </p>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Cooling type">
-                      <select
-                        className="field"
-                        value={proposal.cooling_type}
-                        onChange={(e) =>
-                          setProposal((prev) => ({ ...prev, cooling_type: e.target.value as DataCentreProposal["cooling_type"] }))
-                        }
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Address
+                        <input
+                          className="field"
+                          value={proposal.address}
+                          onChange={(e) => updateProposalField("address", e.target.value)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Province
+                        <select
+                          className="field"
+                          value={proposal.province}
+                          onChange={(e) => updateProposalField("province", e.target.value as DataCentreProposal["province"])}
+                        >
+                          {(["ON", "AB", "BC", "QC", "MB", "SK", "NS", "NB", "NL", "PE"] as const).map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        IT Load (MW)
+                        <input
+                          className="field"
+                          type="number"
+                          value={proposal.it_load_mw}
+                          onChange={(e) => updateProposalField("it_load_mw", Number(e.target.value) || 0)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        PUE
+                        <input
+                          className="field"
+                          type="number"
+                          step="0.001"
+                          value={proposal.pue}
+                          onChange={(e) => updateProposalField("pue", Number(e.target.value) || 0)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        WUE
+                        <input
+                          className="field"
+                          type="number"
+                          step="0.001"
+                          value={proposal.wue}
+                          onChange={(e) => updateProposalField("wue", Number(e.target.value) || 0)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Cooling Type
+                        <select
+                          className="field"
+                          value={proposal.cooling_type}
+                          onChange={(e) => updateProposalField("cooling_type", e.target.value as DataCentreProposal["cooling_type"])}
+                        >
+                          <option value="air">air</option>
+                          <option value="evaporative">evaporative</option>
+                          <option value="liquid_immersion">liquid immersion</option>
+                          <option value="hybrid">hybrid</option>
+                        </select>
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Facility Type
+                        <select
+                          className="field"
+                          value={proposal.facility_type}
+                          onChange={(e) => updateProposalField("facility_type", e.target.value as DataCentreProposal["facility_type"])}
+                        >
+                          <option value="hyperscale">hyperscale</option>
+                          <option value="enterprise">enterprise</option>
+                          <option value="colocation">colocation</option>
+                        </select>
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        CAPEX (CAD millions)
+                        <input
+                          className="field"
+                          type="number"
+                          value={proposal.capex_cad}
+                          onChange={(e) => updateProposalField("capex_cad", Number(e.target.value) || 0)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Construction Months
+                        <input
+                          className="field"
+                          type="number"
+                          value={proposal.construction_months}
+                          onChange={(e) => updateProposalField("construction_months", Number(e.target.value) || 0)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap gap-5 text-sm text-slate-600">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={proposal.has_onsite_generation}
+                          onChange={(e) => updateProposalField("has_onsite_generation", e.target.checked)}
+                        />
+                        On-site generation
+                      </label>
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={proposal.renewable_ppa}
+                          onChange={(e) => updateProposalField("renewable_ppa", e.target.checked)}
+                        />
+                        Renewable PPA
+                      </label>
+                    </div>
+
+                    <form onSubmit={onSubmitAssessment} className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="group relative w-full overflow-hidden rounded-xl bg-emerald-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 hover:shadow-emerald-600/35 disabled:opacity-70 disabled:cursor-not-allowed md:w-auto md:min-w-[280px]"
                       >
-                        <option value="air">air</option>
-                        <option value="evaporative">evaporative</option>
-                        <option value="liquid_immersion">liquid immersion</option>
-                        <option value="hybrid">hybrid</option>
-                      </select>
-                    </Field>
-                    <Field label="Facility type">
-                      <select
-                        className="field"
-                        value={proposal.facility_type}
-                        onChange={(e) =>
-                          setProposal((prev) => ({ ...prev, facility_type: e.target.value as DataCentreProposal["facility_type"] }))
-                        }
-                      >
-                        <option value="hyperscale">hyperscale</option>
-                        <option value="enterprise">enterprise</option>
-                        <option value="colocation">colocation</option>
-                      </select>
-                    </Field>
+                        <span className="relative z-10 flex items-center justify-center gap-2">
+                          {loading ? (
+                            <>
+                              <Loader2 className="size-5 animate-spin" />
+                              Running assessment…
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="size-5" />
+                              Run Impact Assessment
+                            </>
+                          )}
+                        </span>
+                      </button>
+                    </form>
                   </div>
+                )}
 
-                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={proposal.has_onsite_generation}
-                        onChange={(e) => setProposal((prev) => ({ ...prev, has_onsite_generation: e.target.checked }))}
-                      />
-                      On-site generation
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={proposal.renewable_ppa}
-                        onChange={(e) => setProposal((prev) => ({ ...prev, renewable_ppa: e.target.checked }))}
-                      />
-                      Renewable PPA
-                    </label>
-                  </div>
-
-                  <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
-                    Inputs with highest sensitivity: <strong>IT load</strong>, <strong>PUE</strong>, and <strong>WUE</strong>. Small changes can move risk bands.
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">Expectation preview for this scenario</p>
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
-                      {PRESETS.find((p) => p.id === selectedPreset)?.expectedSignals.map((signal) => (
-                        <li key={signal}>{signal}</li>
-                      ))}
-                    </ul>
-                    {expectationSummary && (
-                      <p className="mt-2 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700">{expectationSummary}</p>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    <ShinyButton
-                      type="submit"
-                      className="bg-teal-700 text-white disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={loading}
-                    >
-                      {loading ? "Running core assessment..." : "Run assessment"}
-                    </ShinyButton>
-                    {assessment && <span className="text-xs text-slate-600">Core assessment finished. Steps 2 and 3 are ready.</span>}
-                  </div>
-                </form>
-
-                <ProgressPanel progress={progress} error={error} memoState={memoState} memoJobId={memoJobId} memoError={memoError} />
+                {/* Progress */}
+                {progress && loading && (
+                  <ProgressPanel progress={progress} />
+                )}
+                {error && <ErrorBanner text={error} />}
               </section>
             )}
 
+            {/* ═══ STEP 2: LOCATION CONTEXT ═══ */}
             {currentStep === 2 && (
-              <section className="mt-4">
+              <section className="animate-fade-in">
+                <SectionHeader
+                  title="Location Context"
+                  subtitle="Site location, local pressure indicators, and environmental baseline."
+                />
                 {!assessment ? (
-                  <EmptyState text="Run the assessment first to open map context." />
+                  <EmptyState text="Run the assessment first to view location context." />
                 ) : (
-                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px]">
-                    <div className="space-y-3">
-                      <div className="map-shell overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-                        <LocationContextMap
-                          lat={assessment.location.lat}
-                          lng={assessment.location.lng}
-                          apiKey={MAPTILER_KEY}
-                          noiseRadiusM={assessment.sociological.estimated_noise_radius_m}
-                        />
-                      </div>
-                      <p className="text-sm text-slate-700">
-                        {assessment.location.municipality}, {assessment.location.province} | lat {assessment.location.lat.toFixed(4)}, lng {assessment.location.lng.toFixed(4)}
-                      </p>
+                  <div className="mt-5 space-y-5">
+                    {/* Map */}
+                    <div className="map-shell overflow-hidden rounded-2xl border border-slate-200/50 shadow-sm">
+                      <LocationContextMap
+                        lat={assessment.location.lat}
+                        lng={assessment.location.lng}
+                        apiKey={MAPTILER_KEY}
+                        noiseRadiusM={assessment.sociological.estimated_noise_radius_m}
+                        waterSharePct={assessment.environmental.pct_of_municipal_daily_supply}
+                        gridStrainProb={assessment.grid_strain.strain_probability}
+                        populationInNoiseZone={assessment.sociological.residential_population_in_noise_zone}
+                        firstNationDistanceKm={assessment.sociological.nearest_first_nation_km}
+                        municipality={assessment.location.municipality}
+                        province={assessment.location.province}
+                      />
                     </div>
+                    <p className="text-sm text-slate-500">
+                      <MapPin className="mr-1 inline size-3.5 text-emerald-600" />
+                      {assessment.location.municipality}, {assessment.location.province} — {assessment.location.lat.toFixed(4)}°N, {assessment.location.lng.toFixed(4)}°W
+                    </p>
 
-                    <div className="space-y-3">
+                    {/* Gauge cards */}
+                    <div className="grid gap-4 md:grid-cols-3">
                       <GaugeCard
-                        title="Water-share pressure"
+                        title="Water-Share Pressure"
+                        icon={<Droplets className="size-4" />}
                         value={`${assessment.environmental.pct_of_municipal_daily_supply.toFixed(2)}%`}
                         level={waterShareLevel(assessment.environmental.pct_of_municipal_daily_supply)}
                         widthPct={Math.min(100, assessment.environmental.pct_of_municipal_daily_supply * 8)}
                         description={waterShareMessage(assessment.environmental.pct_of_municipal_daily_supply)}
                       />
                       <GaugeCard
-                        title="Grid strain signal"
+                        title="Grid Strain Signal"
+                        icon={<Zap className="size-4" />}
                         value={toPct(assessment.grid_strain.strain_probability)}
                         level={gridLevel(assessment.grid_strain.strain_probability)}
                         widthPct={Math.min(100, assessment.grid_strain.strain_probability * 100)}
                         description={gridImplication(assessment.grid_strain)}
                       />
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-xs uppercase tracking-wide text-slate-500">Estimated acoustic radius</p>
-                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                      <div className="glass rounded-xl p-4">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                          <AlertTriangle className="size-4" />
+                          Acoustic Radius
+                        </div>
+                        <p className="mt-2 text-2xl font-bold text-slate-800">
                           {typeof assessment.sociological.estimated_noise_radius_m === "number"
                             ? `${assessment.sociological.estimated_noise_radius_m.toFixed(0)} m`
                             : "Unavailable"}
                         </p>
-                        <p className="mt-1 text-xs text-slate-600">
-                          This is a screening radius for where noise-management plans should be reviewed in detail.
+                        <p className="mt-1 text-xs text-slate-500">
+                          Screening radius for noise-management review.
                         </p>
                       </div>
                     </div>
+
                   </div>
                 )}
-
-                {assessment && <TrustSummary dataFreshness={assessment.data_freshness} />}
               </section>
             )}
 
+            {/* ═══ STEP 3: IMPACT RESULTS ═══ */}
             {currentStep === 3 && (
-              <section className="mt-4">
+              <section className="animate-fade-in">
+                <SectionHeader
+                  title="Impact Results"
+                  subtitle="Quantified environmental, economic, and grid impact with plain-language interpretation."
+                />
                 {!assessment ? (
                   <EmptyState text="Run the assessment first to view impact results." />
                 ) : (
-                  <>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <ImpactCard
-                        title="Environmental impact"
-                        text={`Estimated annual emissions are ${assessment.environmental.annual_carbon_tonnes.toLocaleString()} tCO2e, and daily water demand is ${assessment.environmental.total_water_litres_per_day.toLocaleString()} L.`}
+                  <div className="mt-5 space-y-5">
+                    {/* Impact domain cards */}
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <ImpactDomainCard
+                        title="Environmental"
+                        rag={assessment.environmental.carbon_score}
+                        metrics={[
+                          { label: "Annual CO₂", value: `${assessment.environmental.annual_carbon_tonnes.toLocaleString()} t` },
+                          { label: "Daily water", value: `${assessment.environmental.total_water_litres_per_day.toLocaleString()} L` },
+                          { label: "Municipal supply share", value: `${assessment.environmental.pct_of_municipal_daily_supply.toFixed(2)}%` },
+                        ]}
+                        icon={<Droplets className="size-5" />}
                       />
-                      <ImpactCard
-                        title="Economic impact"
-                        text={`Estimated net fiscal impact over 10 years is $${assessment.economic.net_fiscal_impact_10yr_cad.toLocaleString()}, with ${assessment.economic.direct_permanent_jobs} direct permanent jobs.`}
+                      <ImpactDomainCard
+                        title="Economic"
+                        rag={assessment.economic.fiscal_score}
+                        metrics={[
+                          { label: "Permanent jobs", value: assessment.economic.direct_permanent_jobs.toLocaleString() },
+                          { label: "10-yr tax revenue", value: `$${assessment.economic.estimated_total_tax_revenue_10yr_cad.toLocaleString()}` },
+                          { label: "10-yr net fiscal", value: `$${assessment.economic.net_fiscal_impact_10yr_cad.toLocaleString()}` },
+                        ]}
+                        icon={<TrendingUp className="size-5" />}
                       />
-                      <ImpactCard
-                        title="Grid impact"
-                        text={`Modelled grid strain probability is ${toPct(assessment.grid_strain.strain_probability)} (${assessment.grid_strain.predicted_strain_level}).`}
+                      <ImpactDomainCard
+                        title="Grid Strain"
+                        rag={gridRag(assessment.grid_strain.strain_probability)}
+                        metrics={[
+                          { label: "Strain probability", value: toPct(assessment.grid_strain.strain_probability) },
+                          { label: "Rate increase risk", value: toPct(assessment.grid_strain.rate_increase_probability) },
+                          { label: "Strain level", value: assessment.grid_strain.predicted_strain_level },
+                        ]}
+                        icon={<Zap className="size-5" />}
                       />
                     </div>
 
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {/* What this means */}
+                    <div className="grid gap-4 md:grid-cols-2">
                       <MeaningCard
                         title="What this means for residents"
-                        points={residentMeaning(assessment)}
+                        icon={<UserRound className="size-4" />}
+                        points={impactSummary?.resident_bullets ?? residentMeaning(assessment)}
+                        loading={summaryState === "loading"}
                       />
                       <MeaningCard
-                        title="What this means for council decisions"
-                        points={councilMeaning(assessment)}
+                        title="What this means for council"
+                        icon={<Landmark className="size-4" />}
+                        points={impactSummary?.council_bullets ?? councilMeaning(assessment)}
+                        loading={summaryState === "loading"}
                       />
                     </div>
 
-                    <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                      <summary className="cursor-pointer font-medium text-slate-900">Advanced details (methods and formulas)</summary>
-                      <div className="mt-2 space-y-1 text-xs">
-                        <p>Composite signal: {assessment.overall_score.summary_sentence}</p>
-                        <p>Carbon formula: {evidenceText(assessment, "environmental", "carbon_formula")}</p>
-                        <p>Water formula: {evidenceText(assessment, "environmental", "water_formula")}</p>
-                        <p>Grid formula: {evidenceText(assessment, "environmental", "grid_formula")}</p>
-                        <p>Jobs formula: {evidenceText(assessment, "economic", "jobs_formula")}</p>
-                        <p>Fiscal formula: {evidenceText(assessment, "economic", "fiscal_formula")}</p>
-                      </div>
-                    </details>
-                  </>
+                  </div>
                 )}
               </section>
             )}
 
+            {/* ═══ STEP 4: DECISION BRIEF ═══ */}
             {currentStep === 4 && (
-              <section className="mt-4">
+              <section className="animate-fade-in">
+                <SectionHeader
+                  title="Decision Brief"
+                  subtitle="Policy recommendation and persona memo from assessment evidence."
+                />
                 {!assessment ? (
-                  <EmptyState text="Run the assessment first to open the decision brief." />
+                  <EmptyState text="Run the assessment first to view the decision brief." />
                 ) : (
-                  <>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                      <p className="font-semibold text-slate-900">Shared recommendation</p>
-                      <p className="mt-1">{plainLanguageSummary(assessment)}</p>
-                    </div>
+                  <div className="mt-5 space-y-5">
+                    {/* Verdict banner */}
+                    <VerdictBanner assessment={assessment} />
 
-                    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        {memoState === "ready" ? (
-                          <CheckCircle2 className="size-4 text-emerald-600" />
-                        ) : memoState === "failed" ? (
-                          <XCircle className="size-4 text-rose-600" />
-                        ) : (
-                          <Loader2 className="size-4 animate-spin text-slate-500" />
-                        )}
-                        <p className="font-medium text-slate-900">Memo generation status: {memoStateLabel(memoState)}</p>
-                      </div>
-                      {memoError && <p className="mt-1 text-xs text-rose-700">{memoError}</p>}
-                      {memoState !== "ready" && (
-                        <p className="mt-1 text-xs text-slate-600">You can continue reviewing this step while the narrative memo is generated in the background.</p>
-                      )}
-                    </div>
-
-                    <div className="mt-4 flex gap-2">
+                    {/* Persona toggle */}
+                    <div className="flex gap-2">
                       <Button
                         type="button"
                         variant={persona === "citizen" ? "default" : "outline"}
                         onClick={() => setPersona("citizen")}
+                        className={persona === "citizen" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
                       >
                         <UserRound className="size-4" />
                         Citizen
@@ -798,53 +1010,43 @@ export default function Home() {
                         type="button"
                         variant={persona === "councillor" ? "default" : "outline"}
                         onClick={() => setPersona("councillor")}
+                        className={persona === "councillor" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
                       >
                         <Landmark className="size-4" />
                         Councillor
                       </Button>
                     </div>
 
-                    <div className="mt-3 grid gap-3 md:grid-cols-3">
-                      <ActionPhaseCard title="Now" items={phaseActions(assessment, persona).now} />
-                      <ActionPhaseCard title="Before permit" items={phaseActions(assessment, persona).beforePermit} />
-                      <ActionPhaseCard title="Post-approval monitoring" items={phaseActions(assessment, persona).postApproval} />
-                    </div>
+                    {/* Persona memo */}
+                    <PersonaMemoCard assessment={assessment} persona={persona} />
 
-                    <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                      <summary className="cursor-pointer font-medium text-slate-900">Memo text and policy details</summary>
-                      <div className="mt-2 space-y-2">
-                        <p className="text-xs whitespace-pre-line text-slate-700">
-                          {assessment.memo?.recommendation_section || assessment.report_narrative || "Memo is not available yet."}
-                        </p>
-                        {assessment.negotiation_playbook.length > 0 && (
-                          <div className="rounded-lg border border-slate-200 bg-white p-2">
-                            <p className="text-xs font-semibold text-slate-700">Negotiation playbook</p>
-                            <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                              {assessment.negotiation_playbook.map((item) => (
-                                <li key={item}>{item}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    </details>
-                  </>
+                  </div>
                 )}
               </section>
             )}
           </BlurFade>
         </div>
 
-        <div className="mt-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/90 p-3">
-          <Button type="button" variant="outline" onClick={() => setCurrentStep((s) => Math.max(1, s - 1) as StepId)} disabled={currentStep === 1}>
+        {/* ── Bottom nav ──────────────────────────────────── */}
+        <div className="mt-4 flex items-center justify-between rounded-xl glass-strong px-4 py-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setCurrentStep((s) => Math.max(1, s - 1) as StepId)}
+            disabled={currentStep === 1}
+            className="gap-1.5"
+          >
             <ArrowLeft className="size-4" />
             Back
           </Button>
-          <span className="text-xs font-medium text-slate-500">Step {currentStep} of 4</span>
+          <span className="text-xs font-medium text-slate-400">
+            Step {currentStep} of 4
+          </span>
           <Button
             type="button"
             onClick={() => setCurrentStep((s) => Math.min(4, s + 1) as StepId)}
             disabled={!canGoNext || currentStep === 4}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             Next
             <ArrowRight className="size-4" />
@@ -855,241 +1057,266 @@ export default function Home() {
   );
 }
 
-function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
+/* ════════════════════════════════════════════════════════════
+   SUB-COMPONENTS
+   ════════════════════════════════════════════════════════════ */
+
+function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <p className="text-xl font-semibold text-slate-900">{title}</p>
-      <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
+      <h2 className="text-xl font-bold text-slate-800">{title}</h2>
+      <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function ParamCard({ label, value, ready, flash = false }: { label: string; value: string; ready: boolean; flash?: boolean }) {
   return (
-    <label className="block text-sm text-slate-700">
-      <span className="mb-1 block font-medium">{label}</span>
-      {children}
-    </label>
+    <div className={`glass rounded-xl px-4 py-3 transition-all ${ready ? "animate-fade-in-up" : "opacity-70"} ${flash ? "ring-2 ring-cyan-300/70 shadow-md shadow-cyan-200/50" : ""}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+      {ready ? (
+        <p className="mt-1 text-sm font-bold text-slate-800">{value}</p>
+      ) : (
+        <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+          <Loader2 className="size-3.5 animate-spin" />
+          Processing…
+        </p>
+      )}
+    </div>
   );
 }
 
-function ErrorText({ text }: { text: string }) {
-  return <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{text}</p>;
+function ParamBadge({ label, active, ready = true }: { label: string; active: boolean; ready?: boolean }) {
+  if (!ready) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/50 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500">
+        <Loader2 className="size-3 animate-spin" />
+        Processing {label.toLowerCase()}…
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
+        active
+          ? "bg-emerald-50 text-emerald-700 border border-emerald-200/50"
+          : "bg-slate-100 text-slate-500 border border-slate-200/50"
+      }`}
+    >
+      {active ? <CheckCircle2 className="size-3" /> : <XCircle className="size-3" />}
+      {label}
+    </span>
+  );
+}
+
+function ProgressPanel({ progress }: { progress: StreamEvent }) {
+  const stageLabel = STAGE_LABELS[progress.stage] ?? progress.stage;
+  return (
+    <div className="mt-5 glass rounded-xl p-4 animate-fade-in-up">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-semibold text-slate-700">{stageLabel}</span>
+        <span className="text-xs font-medium text-emerald-600">{progress.pct}%</span>
+      </div>
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className="progress-fill h-full rounded-full transition-all" style={{ width: `${progress.pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function ErrorBanner({ text }: { text: string }) {
+  return (
+    <div className="mt-4 flex items-start gap-3 rounded-xl border border-rose-200/50 bg-rose-50/60 px-4 py-3 animate-scale-in">
+      <XCircle className="mt-0.5 size-4 shrink-0 text-rose-500" />
+      <p className="text-sm text-rose-700">{text}</p>
+    </div>
+  );
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-600">{text}</div>;
-}
-
-function ProgressPanel({
-  progress,
-  error,
-  memoState,
-  memoJobId,
-  memoError,
-}: {
-  progress: StreamEvent | null;
-  error: string | null;
-  memoState: MemoState;
-  memoJobId: string | null;
-  memoError: string | null;
-}) {
-  if (!progress && !error && memoState === "idle") return null;
-
   return (
-    <div className="space-y-3">
-      {progress && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-slate-900">Progress: {progress.stage}</span>
-            <span className="text-slate-600">{progress.pct}%</span>
-          </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
-            <div className="h-full rounded-full bg-teal-600 transition-all" style={{ width: `${progress.pct}%` }} />
-          </div>
-        </div>
-      )}
-      {memoState !== "idle" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
-          <p>
-            Memo job: <strong>{memoStateLabel(memoState)}</strong>
-            {memoJobId ? ` (${memoJobId})` : ""}
-          </p>
-          {memoError && <p className="mt-1 text-rose-700">{memoError}</p>}
-        </div>
-      )}
-      {error && <ErrorText text={error} />}
-    </div>
-  );
-}
-
-function ImpactCard({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <p className="text-sm font-semibold text-slate-900">{title}</p>
-      <p className="mt-1 text-sm text-slate-700">{text}</p>
-    </div>
-  );
-}
-
-function MeaningCard({ title, points }: { title: string; points: string[] }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
-      <p className="text-sm font-semibold text-slate-900">{title}</p>
-      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-        {points.map((point) => (
-          <li key={point}>{point}</li>
-        ))}
-      </ul>
+    <div className="mt-5 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200/50 py-12 text-center">
+      <CloudUpload className="size-8 text-slate-300" />
+      <p className="mt-3 text-sm text-slate-400">{text}</p>
     </div>
   );
 }
 
 function GaugeCard({
   title,
+  icon,
   value,
   level,
   widthPct,
   description,
 }: {
   title: string;
+  icon: React.ReactNode;
   value: string;
   level: "low" | "moderate" | "high";
   widthPct: number;
   description: string;
 }) {
-  const tone = level === "low" ? "bg-emerald-500" : level === "moderate" ? "bg-amber-500" : "bg-rose-500";
+  const color =
+    level === "low" ? "bg-emerald-500" : level === "moderate" ? "bg-amber-500" : "bg-rose-500";
+  const levelColor =
+    level === "low" ? "text-emerald-600" : level === "moderate" ? "text-amber-600" : "text-rose-600";
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-      <div className="mt-1 flex items-end justify-between">
-        <p className="text-lg font-semibold text-slate-900">{value}</p>
-        <span className="text-xs font-medium uppercase text-slate-600">{level}</span>
+    <div className="glass rounded-xl p-4">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        {icon}
+        {title}
       </div>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
-        <div className={`h-full ${tone}`} style={{ width: `${Math.max(2, widthPct)}%` }} />
+      <div className="mt-2 flex items-end justify-between">
+        <p className="text-2xl font-bold text-slate-800">{value}</p>
+        <span className={`text-xs font-bold uppercase ${levelColor}`}>{level}</span>
       </div>
-      <p className="mt-2 text-xs text-slate-600">{description}</p>
+      <div className="gauge-track mt-3">
+        <div className={`gauge-fill ${color}`} style={{ width: `${Math.max(3, widthPct)}%` }} />
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-slate-500">{description}</p>
     </div>
   );
 }
 
-function TrustSummary({ dataFreshness }: { dataFreshness: Record<string, string> }) {
-  const trust = summarizeTrust(dataFreshness);
+function ImpactDomainCard({
+  title,
+  rag,
+  metrics,
+  icon,
+}: {
+  title: string;
+  rag: string;
+  metrics: { label: string; value: string }[];
+  icon: React.ReactNode;
+}) {
+  const ragClass = rag === "green" ? "rag-green" : rag === "red" ? "rag-red" : "rag-amber";
+  const ragColor = rag === "green" ? "text-emerald-600" : rag === "red" ? "text-rose-600" : "text-amber-600";
 
   return (
-    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+    <div className={`rag-card rounded-xl p-4`} style={{
+      background: `var(--rag-bg)`,
+      border: `1px solid var(--rag-border)`,
+    }}>
+      <div className={`${ragClass}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={ragColor}>{icon}</span>
+            <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+          </div>
+          <span className={`text-[10px] font-bold uppercase ${ragColor} rounded-full px-2 py-0.5 bg-white/60`}>
+            {rag}
+          </span>
+        </div>
+        <div className="mt-3 space-y-2">
+          {metrics.map((m) => (
+            <div key={m.label} className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">{m.label}</span>
+              <span className="font-bold text-slate-800">{m.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MeaningCard({ title, icon, points, loading = false }: { title: string; icon: React.ReactNode; points: string[]; loading?: boolean }) {
+  return (
+    <div className="glass rounded-xl p-4">
       <div className="flex items-center gap-2">
-        <ShieldCheck className="size-4 text-teal-700" />
-        <p className="font-semibold text-slate-900">Trust summary ({trust.label} confidence)</p>
+        {icon}
+        <h3 className="text-sm font-bold text-slate-700">{title}</h3>
+        {loading && <Loader2 className="ml-auto size-3.5 animate-spin text-slate-400" />}
       </div>
-      <p className="mt-1 text-xs text-slate-600">
-        This assessment combines live feeds, official public datasets, and vetted reference data. We surface confidence at a high level so residents can focus on decisions, not internal source codes.
-      </p>
-      <p className="mt-2 text-xs text-slate-600">
-        Live/cached signals: {trust.liveOrCached} | Reference datasets: {trust.reference} | Temporarily unavailable inputs: {trust.unavailable}
-      </p>
-    </div>
-  );
-}
-
-function ActionPhaseCard({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
-      <p className="text-sm font-semibold text-slate-900">{title}</p>
-      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
+      <ul className="mt-3 space-y-2 pl-1">
+        {points.map((point) => (
+          <li key={point} className="flex gap-2 text-sm text-slate-600">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-400" />
+            {point}
+          </li>
         ))}
       </ul>
     </div>
   );
 }
 
-function mergeExtractedProposal(current: DataCentreProposal, extracted: ExtractProposalResponse): DataCentreProposal {
-  const next: DataCentreProposal = { ...current };
+function VerdictBanner({ assessment }: { assessment: ImpactAssessment }) {
+  const rec = assessment.policy_decision?.recommendation ?? "review";
+  const verdictMap: Record<string, { className: string; icon: React.ReactNode; label: string; color: string }> = {
+    reject: { className: "verdict-reject", icon: <Ban className="size-6" />, label: "Reject", color: "text-rose-600" },
+    defer: { className: "verdict-defer", icon: <Clock className="size-6" />, label: "Defer", color: "text-amber-600" },
+    approve_with_conditions: { className: "verdict-conditions", icon: <AlertTriangle className="size-6" />, label: "Approve with Conditions", color: "text-amber-600" },
+    approve: { className: "verdict-approve", icon: <ThumbsUp className="size-6" />, label: "Approve", color: "text-emerald-600" },
+  };
+  const v = verdictMap[rec] ?? verdictMap.defer!;
 
-  if (typeof extracted.address === "string" && extracted.address.trim()) {
-    next.address = extracted.address.trim();
-  }
-
-  if (typeof extracted.province === "string") {
-    const province = extracted.province.toUpperCase() as DataCentreProposal["province"];
-    if (PROVINCES.includes(province)) {
-      next.province = province;
-    }
-  }
-
-  const numericFields: Array<keyof Pick<DataCentreProposal, "it_load_mw" | "pue" | "wue" | "capex_cad" | "construction_months">> = [
-    "it_load_mw",
-    "pue",
-    "wue",
-    "capex_cad",
-    "construction_months",
-  ];
-
-  for (const field of numericFields) {
-    const value = extracted[field];
-    if (typeof value === "number" && Number.isFinite(value)) {
-      next[field] = value;
-    }
-  }
-
-  if (extracted.cooling_type && ["air", "evaporative", "liquid_immersion", "hybrid"].includes(extracted.cooling_type)) {
-    next.cooling_type = extracted.cooling_type;
-  }
-
-  if (extracted.facility_type && ["hyperscale", "enterprise", "colocation"].includes(extracted.facility_type)) {
-    next.facility_type = extracted.facility_type;
-  }
-
-  if (typeof extracted.has_onsite_generation === "boolean") {
-    next.has_onsite_generation = extracted.has_onsite_generation;
-  }
-  if (typeof extracted.renewable_ppa === "boolean") {
-    next.renewable_ppa = extracted.renewable_ppa;
-  }
-
-  return next;
+  return (
+    <div className={`${v.className} rounded-xl px-5 py-5 animate-scale-in`}>
+      <div className="flex items-center gap-3">
+        <span className={v.color}>{v.icon}</span>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Policy Recommendation</p>
+          <p className={`text-2xl font-extrabold ${v.color}`}>{v.label}</p>
+        </div>
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        {plainLanguageSummary(assessment)}
+      </p>
+    </div>
+  );
 }
 
-function summarizeTrust(dataFreshness: Record<string, string>) {
-  const statuses = Object.values(dataFreshness).map((v) => String(v).toLowerCase());
-  const liveOrCached = statuses.filter((v) => v.startsWith("live") || v.startsWith("cached")).length;
-  const unavailable = statuses.filter((v) => v.startsWith("unavailable")).length;
-  const reference = statuses.filter((v) => v.startsWith("static_reference")).length;
-
-  const label = unavailable === 0 && liveOrCached >= 2 ? "high" : unavailable <= 2 ? "moderate" : "low";
-
-  return { label, liveOrCached, unavailable, reference };
+function MemoStatusCard({ memoState, memoError }: { memoState: MemoState; memoError: string | null }) {
+  return (
+    <div className="glass rounded-xl px-4 py-3 flex items-center gap-3">
+      {memoState === "ready" ? (
+        <CheckCircle2 className="size-4 text-emerald-600" />
+      ) : memoState === "failed" ? (
+        <XCircle className="size-4 text-rose-500" />
+      ) : (
+        <Loader2 className="size-4 animate-spin text-slate-400" />
+      )}
+      <div>
+        <p className="text-sm font-semibold text-slate-700">
+          AI memo: <span className="capitalize">{memoStateLabel(memoState)}</span>
+        </p>
+        {memoError && <p className="text-xs text-rose-600 mt-0.5">{memoError}</p>}
+        {memoState !== "ready" && memoState !== "failed" && (
+          <p className="text-xs text-slate-400 mt-0.5">Continue reviewing while the AI memo generates in the background.</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function evaluateScenarioMatch(scenarioId: ScenarioId, assessment: ImpactAssessment) {
-  const rec = assessment.policy_decision?.recommendation ?? "";
+function PersonaMemoCard({ assessment, persona }: { assessment: ImpactAssessment; persona: Persona }) {
+  const items = personaMemoLines(assessment, persona);
+  const title = persona === "citizen" ? "Citizen memo" : "Councillor memo";
 
-  if (scenarioId === "beacon_high_load") {
-    let matched = 0;
-    if (assessment.environmental.pct_of_municipal_daily_supply >= 5) matched += 1;
-    if (assessment.grid_strain.strain_probability >= 0.15) matched += 1;
-    if (rec === "defer" || rec === "reject") matched += 1;
-    return matched >= 2
-      ? "Outcome check: matched expected stress-case direction (higher pressure signals)."
-      : "Outcome check: partially matched stress-case expectation; review assumptions and location context.";
-  }
-
-  if (scenarioId === "balanced_qc") {
-    const lowPressure = assessment.environmental.pct_of_municipal_daily_supply < 5 && assessment.grid_strain.strain_probability < 0.15;
-    return lowPressure
-      ? "Outcome check: matched expected lower-pressure direction for balanced QC profile."
-      : "Outcome check: did not fully match expected lower-pressure direction; verify inputs.";
-  }
-
-  const baselineOkay = assessment.environmental.pct_of_municipal_daily_supply < 5 && assessment.grid_strain.strain_probability < 0.2;
-  return baselineOkay
-    ? "Outcome check: baseline behaved as expected for a moderate-load AB profile."
-    : "Outcome check: baseline showed higher-than-expected pressure; inspect map context and assumptions.";
+  return (
+    <div className="glass rounded-xl p-4">
+      <div className="flex items-center gap-2">
+        {persona === "citizen" ? <UserRound className="size-4" /> : <Landmark className="size-4" />}
+        <h3 className="text-sm font-bold text-slate-700">{title}</h3>
+      </div>
+      <ul className="mt-3 space-y-2 pl-1">
+        {items.map((item) => (
+          <li key={item} className="flex gap-2 text-sm text-slate-600">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-400" />
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
+
+/* ════════════════════════════════════════════════════════════
+   HELPER FUNCTIONS
+   ════════════════════════════════════════════════════════════ */
 
 function toPct(v: number) {
   return `${(v * 100).toFixed(1)}%`;
@@ -1113,6 +1340,12 @@ function gridLevel(v: number): "low" | "moderate" | "high" {
   return "high";
 }
 
+function gridRag(v: number): string {
+  if (v < 0.1) return "green";
+  if (v < 0.25) return "amber";
+  return "red";
+}
+
 function gridImplication(grid: ImpactAssessment["grid_strain"]) {
   if (grid.strain_probability < 0.1) return "Limited expected system pressure under current assumptions.";
   if (grid.strain_probability < 0.25) return "Moderate pressure risk; utility coordination should be explicit.";
@@ -1126,13 +1359,11 @@ function residentMeaning(a: ImpactAssessment): string[] {
   } else {
     items.push("Water-demand pressure appears manageable under current assumptions.");
   }
-
   if (a.grid_strain.strain_probability >= 0.2) {
     items.push("There is a meaningful chance of grid pressure, so power-rate questions are valid.");
   } else {
     items.push("Grid-pressure risk appears low to moderate in this scenario.");
   }
-
   items.push(`Estimated people in the modeled noise influence area: ${a.sociological.residential_population_in_noise_zone.toLocaleString()}.`);
   return items;
 }
@@ -1141,82 +1372,120 @@ function councilMeaning(a: ImpactAssessment): string[] {
   const items: string[] = [];
   items.push(`Policy recommendation currently trends to: ${(a.policy_decision?.recommendation ?? "unknown").replaceAll("_", " ")}.`);
   items.push(`Net 10-year fiscal estimate: $${a.economic.net_fiscal_impact_10yr_cad.toLocaleString()}.`);
-
   if (a.environmental.water_score === "red") {
     items.push("Use enforceable water caps, audit obligations, and clawback clauses before permit approval.");
   } else {
     items.push("Use annual reporting conditions to keep utility impacts transparent post-approval.");
   }
-
   return items;
 }
 
 function plainLanguageSummary(a: ImpactAssessment): string {
   const rec = (a.policy_decision?.recommendation ?? "review").replaceAll("_", " ");
-  return `Current recommendation: ${rec}. In plain terms, this project is ${a.overall_score.composite_rag} risk overall with the biggest sensitivity around water use, grid pressure, and operating efficiency assumptions.`;
+  return `Current recommendation: ${rec}. This project is assessed as ${a.overall_score.composite_rag} risk overall, with the biggest sensitivities around water use, grid pressure, and operating efficiency assumptions.`;
 }
 
-function phaseActions(a: ImpactAssessment, persona: Persona) {
-  if (persona === "citizen") {
-    return {
-      now: [
-        "Ask for a plain-language summary of water, grid, and noise commitments.",
-        "Request that key assumptions (IT load, PUE, WUE) are published for public review.",
-      ],
-      beforePermit: [
-        "Ask council to require an independent technical review before final permits.",
-        "Push for clear community notification and complaint channels.",
-      ],
-      postApproval: [
-        "Track annual public reporting on water, jobs, and utility pressure.",
-        "Report repeated noise or service issues through published oversight channels.",
-      ],
-    };
+function personaMemoLines(a: ImpactAssessment, persona: Persona): string[] {
+  const memo = a.memo;
+  if (!memo) {
+    return ["Memo is not available yet. Please wait for generation to complete."];
   }
 
-  const permitActions = [...a.negotiation_playbook].slice(0, 2);
-  while (permitActions.length < 2) {
-    permitActions.push("Tie approval milestones to audited environmental and infrastructure commitments.");
+  const recommendation = String(memo.recommendation_section || "").trim();
+  const fromSection = extractPersonaRecommendationSection(recommendation, persona);
+  const parsed = splitMemoTextToLines(fromSection);
+  if (parsed.length > 0) {
+    return parsed;
   }
 
-  return {
-    now: [
-      "Record critical assumptions in the motion and require independent validation.",
-      "Align utility coordination milestones before permit issuance.",
-    ],
-    beforePermit: permitActions,
-    postApproval: [
-      "Require annual compliance reporting on water, grid, tax, and jobs outcomes.",
-      "Include enforcement triggers for missed commitments.",
-    ],
-  };
+  const fallbackFields =
+    persona === "citizen"
+      ? [memo.executive_summary, memo.environmental_section, memo.sociological_section]
+      : [memo.executive_summary, memo.economic_section, memo.recommendation_section];
+
+  const fallback = fallbackFields
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  return fallback.length > 0
+    ? fallback
+    : ["Memo content is unavailable for this persona."];
 }
 
-function evidenceText(
-  assessment: ImpactAssessment,
-  section: "environmental" | "economic" | "sociological" | "grid_strain",
-  key: string,
-) {
-  const sectionRecord = assessment.evidence_pack?.[section];
-  if (!sectionRecord || typeof sectionRecord !== "object") return "unavailable";
-  const value = (sectionRecord as Record<string, unknown>)[key];
-  return value == null ? "unavailable" : String(value);
+function extractPersonaRecommendationSection(section: string, persona: Persona): string {
+  if (!section) return "";
+
+  const normalized = section
+    .replace(/\\n/g, "\n")
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'");
+
+  const citizenMarker = /for\s+citizens?\+?\s*:/gi;
+  const councillorMarker = /for\s+councillors?\+?\s*:/gi;
+  const marker = persona === "citizen" ? citizenMarker : councillorMarker;
+  const otherMarker = persona === "citizen" ? councillorMarker : citizenMarker;
+
+  const hit = marker.exec(normalized);
+  if (hit) {
+    const start = hit.index + hit[0].length;
+    const rest = normalized.slice(start);
+    const otherHit = otherMarker.exec(rest);
+    const end = otherHit ? start + otherHit.index : normalized.length;
+
+    const extracted = normalized
+      .slice(start, end)
+      .replace(/^[\s'"`[{(,:;-]+/, "")
+      .replace(/[\s'"`}\]),;]+$/, "")
+      .trim();
+
+    if (extracted) {
+      return extracted;
+    }
+  }
+
+  return normalized.trim();
+}
+
+function splitMemoTextToLines(text: string): string[] {
+  const cleaned = String(text || "").trim();
+  if (!cleaned) return [];
+
+  const normalizeMemoLine = (line: string) =>
+    line
+      .replace(/^[-•*\s]+/, "")
+      .replace(/^[\s'"`[{(,:;-]+/, "")
+      .replace(/[\s'"`}\]),;]+$/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const byNewline = cleaned
+    .split(/\n+/)
+    .map(normalizeMemoLine)
+    .filter(Boolean)
+    .filter((line) => !/^for\s+(citizens|councillors)\s*:/i.test(line));
+
+  if (byNewline.length >= 2) {
+    return byNewline.slice(0, 4);
+  }
+
+  const bySentence = cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map(normalizeMemoLine)
+    .filter((line) => line.length > 10)
+    .filter((line) => !/^for\s+(citizens|councillors)\s*:/i.test(line));
+
+  return bySentence.slice(0, 4);
 }
 
 function memoStateLabel(state: MemoState) {
   switch (state) {
-    case "idle":
-      return "not started";
-    case "queued":
-      return "queued";
-    case "running":
-      return "running";
-    case "ready":
-      return "ready";
-    case "failed":
-      return "failed";
-    default:
-      return state;
+    case "idle": return "not started";
+    case "queued": return "queued";
+    case "running": return "generating";
+    case "ready": return "ready";
+    case "failed": return "failed";
+    default: return state;
   }
 }
 

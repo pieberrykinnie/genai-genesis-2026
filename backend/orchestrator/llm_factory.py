@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Callable
 
 import railtracks as rt
@@ -38,12 +39,91 @@ def _build_groq_llm(config: LLMFactoryConfig) -> Any:
     api_key = _require_non_empty(config.api_key, "GROQ_API_KEY")
     model_name = _normalize_model_name(_require_non_empty(config.model_name, "GROQ_MODEL"))
     api_base = _require_non_empty(config.api_base, "GROQ_API_BASE")
-    return rt.llm.OpenAICompatibleProvider(
+    return _GroqCompatibleProvider(
         model_name=model_name,
         api_key=api_key,
         api_base=api_base,
         temperature=config.temperature,
     )
+
+
+_JSON_SCHEMA_UNSUPPORTED_PATTERNS = (
+    r"does not support response format\s*`?json_schema`?",
+    r"invalid_request_error",
+    r"response_format",
+)
+
+
+def _is_json_schema_unsupported_error(exc: Exception) -> bool:
+    # Railtracks/LiteLLM frequently wrap provider errors, so inspect the full
+    # exception chain and args to catch json_schema incompatibility reliably.
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    texts: list[str] = []
+
+    while stack:
+        cur = stack.pop()
+        cur_id = id(cur)
+        if cur_id in seen:
+            continue
+        seen.add(cur_id)
+
+        texts.append(str(cur))
+        for arg in getattr(cur, "args", ()):
+            texts.append(str(arg))
+
+        cause = getattr(cur, "__cause__", None)
+        context = getattr(cur, "__context__", None)
+        if isinstance(cause, BaseException):
+            stack.append(cause)
+        if isinstance(context, BaseException):
+            stack.append(context)
+
+    haystack = "\n".join(texts).lower()
+    if "json_schema" not in haystack:
+        return False
+    return any(re.search(pat, haystack) for pat in _JSON_SCHEMA_UNSUPPORTED_PATTERNS)
+
+
+class _GroqCompatibleProvider(OpenAICompatibleProvider):
+    """OpenAI-compatible provider that falls back to json_object when json_schema fails.
+
+    Some Groq models reject `response_format={"type":"json_schema"}` while still
+    supporting json_object. Structured calls should degrade gracefully so schema
+    validation can still run client-side via the base structured handler.
+    """
+
+    def _structured(self, messages: Any, schema: Any) -> Any:
+        from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
+
+        try:
+            return super()._structured(messages, schema)
+        except Exception as exc:
+            if not _is_json_schema_unsupported_error(exc):
+                raise
+
+        model_resp, elapsed = self._invoke(messages, response_format={"type": "json_object"})
+        if isinstance(model_resp, CustomStreamWrapper):
+            return self._stream_handler_base(model_resp, elapsed, schema)
+        return self._structured_handle_base(
+            model_resp, self.extract_message_info(model_resp, elapsed), schema
+        )
+
+    async def _astructured(self, messages: Any, schema: Any) -> Any:
+        from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
+
+        try:
+            return await super()._astructured(messages, schema)
+        except Exception as exc:
+            if not _is_json_schema_unsupported_error(exc):
+                raise
+
+        model_resp, elapsed = await self._ainvoke(messages, response_format={"type": "json_object"})
+        if isinstance(model_resp, CustomStreamWrapper):
+            return self._astream_handler_base(model_resp, elapsed, schema)
+        return self._structured_handle_base(
+            model_resp, self.extract_message_info(model_resp, elapsed), schema
+        )
 
 
 class _BitNetCompatibleProvider(OpenAICompatibleProvider):
