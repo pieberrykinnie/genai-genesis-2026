@@ -1,8 +1,8 @@
-# DataSite Impact Analyzer
+# ClearSite
 
-AI decision support for Canadian municipalities reviewing new data centre proposals.
+Translating complex data center impacts into transparent, sustainable community choices.
 
-Built with railtracks.
+Built with Railtracks.
 
 ## What this project is
 DataSite helps councils and residents understand the trade-offs of proposed data centres before approval.
