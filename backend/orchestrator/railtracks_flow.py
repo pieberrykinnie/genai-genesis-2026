@@ -20,6 +20,7 @@ from data_sources import (
     get_load_context,
     get_statcan_store,
     get_annual_mean_temp,
+    fetch_site_fit_csd_context,
     fetch_site_fit_datacenter_context,
 )
 from ml.grid_strain.predict import predict_grid_strain

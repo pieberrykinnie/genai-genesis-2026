@@ -5,6 +5,6 @@ from .electricity_maps import get_carbon_intensity_g_per_kwh
 from .geocoding import GeocodingUnavailableError, geocode_address, province_centroid
 from .indigenous import get_indigenous_data
 from .provincial_grid import get_capacity_and_surplus
-from .site_fit_data import fetch_site_fit_datacenter_context
+from .site_fit_data import fetch_site_fit_csd_context, fetch_site_fit_datacenter_context
 from .statcan import StatCanStore, get_statcan_store
 from .climate import get_annual_mean_temp

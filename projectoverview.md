@@ -44,3 +44,16 @@ The LLM explains evidence; it does not invent policy.
 - Sustainability impact: grid, water, and community risk are first-class outputs
 - Technical depth: real ingestion, model training/inference, strict API contracts
 - Product value: understandable outputs for non-technical decision makers
+Awards -- Awarded to the team that creates the most innovative AI solution to address environmental or sustainability challenges and drive meaningful real-world impact
+
+and Best use of Railtracks 
+
+Judging Criteria
+Criteria 1: Innovation & Originality
+Focuses on the project's ability to introduce novel concepts, methods, or applications, and to demonstrate creative problem-solving.
+Criteria 2: Technical Complexity & Execution
+Operational effectiveness, code quality, and success in meeting specified requirements and performance standards.
+Criteria 3: Product Experience & Design
+Overall structure of the project, including visual appeal user experience, and the organization of its architecture and code.
+Criteria 4: Impact & Practical Value
+The project's potential to address real-world problems, create positive change, and contribute to meaningful outcomes.
