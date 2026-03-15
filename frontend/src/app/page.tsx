@@ -49,8 +49,8 @@ const LocationContextMap = dynamic(
   },
 );
 
-/* ── Demo payload (hardcoded for hackathon demo) ─────────── */
-const DEMO_PROPOSAL: DataCentreProposal = {
+/* ── Demo payloads (hardcoded for hackathon demo) ────────── */
+const PDF_DEMO_PROPOSAL: DataCentreProposal = {
   address: "Indus, Rocky View County, Alberta",
   province: "AB",
   it_load_mw: 1200,
@@ -64,10 +64,25 @@ const DEMO_PROPOSAL: DataCentreProposal = {
   renewable_ppa: false,
 };
 
+const MANUAL_DEFAULT_PROPOSAL: DataCentreProposal = {
+  address: "Brockville, Ontario",
+  province: "ON",
+  it_load_mw: 240,
+  pue: 1.31,
+  wue: 0.029,
+  cooling_type: "hybrid",
+  facility_type: "colocation",
+  capex_cad: 5400,
+  construction_months: 18,
+  has_onsite_generation: false,
+  renewable_ppa: true,
+};
+
 /* ── Types ───────────────────────────────────────────────── */
 type StepId = 1 | 2 | 3 | 4;
 type Persona = "citizen" | "councillor";
 type MemoState = "idle" | "queued" | "running" | "ready" | "failed";
+type IntakeMode = "upload" | "manual";
 type ExtractParamKey = keyof DataCentreProposal;
 
 const PARAM_EXTRACTION_SEQUENCE: { key: ExtractParamKey; label: string; delayMs: number }[] = [
@@ -83,6 +98,8 @@ const PARAM_EXTRACTION_SEQUENCE: { key: ExtractParamKey; label: string; delayMs:
   { key: "has_onsite_generation", label: "On-site generation", delayMs: 320 },
   { key: "renewable_ppa", label: "Renewable PPA", delayMs: 310 },
 ];
+
+const ALL_PARAM_KEYS = PARAM_EXTRACTION_SEQUENCE.map((item) => item.key);
 
 const STEPS: { id: StepId; label: string; icon: React.ReactNode }[] = [
   { id: 1, label: "Proposal Intake", icon: <CloudUpload className="size-3.5" /> },
@@ -118,6 +135,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<StepId>(1);
   const [persona, setPersona] = useState<Persona>("citizen");
+  const [intakeMode, setIntakeMode] = useState<IntakeMode>("upload");
 
   /* ── File upload state ───────────────────────────────────── */
   const [dragOver, setDragOver] = useState(false);
@@ -125,6 +143,8 @@ export default function Home() {
   const [fieldsRevealed, setFieldsRevealed] = useState(false);
   const [processingParamLabel, setProcessingParamLabel] = useState<string | null>(null);
   const [revealedParamKeys, setRevealedParamKeys] = useState<ExtractParamKey[]>([]);
+  const [autofillPreview, setAutofillPreview] = useState<Partial<DataCentreProposal>>({});
+  const [lastFilledParamKey, setLastFilledParamKey] = useState<ExtractParamKey | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const extractionRunIdRef = useRef(0);
 
@@ -138,15 +158,55 @@ export default function Home() {
   }, [assessment]);
 
   const canGoNext = currentStep < 4 && unlockedSteps[(currentStep + 1) as StepId];
-  const allParamsReady = PARAM_EXTRACTION_SEQUENCE.every((item) => revealedParamKeys.includes(item.key));
+  const allParamsReady = intakeMode === "manual"
+    ? Boolean(proposal)
+    : PARAM_EXTRACTION_SEQUENCE.every((item) => revealedParamKeys.includes(item.key));
+
+  const updateProposalField = useCallback(
+    <K extends keyof DataCentreProposal>(key: K, value: DataCentreProposal[K]) => {
+      setProposal((prev) => {
+        if (!prev) return prev;
+        return { ...prev, [key]: value };
+      });
+    },
+    [],
+  );
+
+  const switchIntakeMode = useCallback((nextMode: IntakeMode) => {
+    extractionRunIdRef.current += 1;
+    setIntakeMode(nextMode);
+    setCurrentStep(1);
+    setAssessment(null);
+    setProgress(null);
+    setError(null);
+    setLastFilledParamKey(null);
+
+    if (nextMode === "manual") {
+      setUploadedFileName(null);
+      setProcessingParamLabel(null);
+      setAutofillPreview({});
+      setProposal(MANUAL_DEFAULT_PROPOSAL);
+      setFieldsRevealed(true);
+      setRevealedParamKeys(ALL_PARAM_KEYS);
+      return;
+    }
+
+    setProposal(null);
+    setFieldsRevealed(false);
+    setRevealedParamKeys([]);
+    setAutofillPreview({});
+    setProcessingParamLabel(null);
+    setUploadedFileName(null);
+  }, []);
 
   /* ── File drop handler ───────────────────────────────────── */
   const handleFileAccepted = useCallback(async (file: File) => {
     const runId = extractionRunIdRef.current + 1;
     extractionRunIdRef.current = runId;
 
+    setIntakeMode("upload");
     setUploadedFileName(file.name);
-    setProposal(DEMO_PROPOSAL);
+    setProposal(null);
     setAssessment(null);
     setProgress(null);
     setError(null);
@@ -154,6 +214,8 @@ export default function Home() {
     setFieldsRevealed(true);
     setProcessingParamLabel("Initializing extraction");
     setRevealedParamKeys([]);
+    setAutofillPreview({});
+    setLastFilledParamKey(null);
 
     await sleep(280);
 
@@ -162,10 +224,16 @@ export default function Home() {
       setProcessingParamLabel(`Extracting ${item.label}`);
       await sleep(item.delayMs);
       if (extractionRunIdRef.current !== runId) return;
+      setAutofillPreview((prev) => ({ ...prev, [item.key]: PDF_DEMO_PROPOSAL[item.key] }));
       setRevealedParamKeys((prev) => (prev.includes(item.key) ? prev : [...prev, item.key]));
+      setLastFilledParamKey(item.key);
+      window.setTimeout(() => {
+        setLastFilledParamKey((prev) => (prev === item.key ? null : prev));
+      }, 450);
     }
 
     if (extractionRunIdRef.current === runId) {
+      setProposal(PDF_DEMO_PROPOSAL);
       setProcessingParamLabel(null);
     }
   }, []);
@@ -398,11 +466,32 @@ export default function Home() {
               <section className="animate-fade-in">
                 <SectionHeader
                   title="Proposal Intake"
-                  subtitle="Upload a data centre proposal PDF to begin the impact assessment."
+                  subtitle="Upload a proposal PDF or enter parameters manually to begin the impact assessment."
                 />
 
+                <div className="mt-5 inline-flex rounded-xl border border-emerald-200/60 bg-emerald-50/70 p-1">
+                  <button
+                    type="button"
+                    onClick={() => switchIntakeMode("upload")}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                      intakeMode === "upload" ? "bg-emerald-600 text-white" : "text-emerald-700 hover:bg-emerald-100"
+                    }`}
+                  >
+                    Upload PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchIntakeMode("manual")}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                      intakeMode === "manual" ? "bg-emerald-600 text-white" : "text-emerald-700 hover:bg-emerald-100"
+                    }`}
+                  >
+                    Manual Entry
+                  </button>
+                </div>
+
                 {/* Drop zone */}
-                {!uploadedFileName && (
+                {intakeMode === "upload" && !uploadedFileName && (
                   <div
                     className={`drop-zone mt-5 flex flex-col items-center justify-center px-6 py-14 text-center ${
                       dragOver ? "drag-over" : ""
@@ -432,7 +521,7 @@ export default function Home() {
                 )}
 
                 {/* File accepted */}
-                {uploadedFileName && (
+                {intakeMode === "upload" && uploadedFileName && (
                   <div className="mt-5 animate-scale-in">
                     <div className="flex items-center gap-3 rounded-xl bg-emerald-50/80 border border-emerald-200/50 px-4 py-3">
                       {processingParamLabel ? (
@@ -453,10 +542,10 @@ export default function Home() {
                 )}
 
                 {/* Extracted fields */}
-                {proposal && fieldsRevealed && (
+                {intakeMode === "upload" && fieldsRevealed && (
                   <div className="mt-5 space-y-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      Extracted Parameters
+                      Live Extraction Preview
                     </p>
                     <p className="text-xs text-slate-500">
                       {allParamsReady
@@ -466,60 +555,69 @@ export default function Home() {
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       <ParamCard
                         label="Location"
-                        value={proposal.address}
+                        value={String(autofillPreview.address ?? "")}
                         ready={revealedParamKeys.includes("address")}
+                        flash={lastFilledParamKey === "address"}
                       />
                       <ParamCard
                         label="Province"
-                        value={proposal.province}
+                        value={String(autofillPreview.province ?? "")}
                         ready={revealedParamKeys.includes("province")}
+                        flash={lastFilledParamKey === "province"}
                       />
                       <ParamCard
                         label="IT Load"
-                        value={`${proposal.it_load_mw.toLocaleString()} MW`}
+                        value={`${Number(autofillPreview.it_load_mw ?? 0).toLocaleString()} MW`}
                         ready={revealedParamKeys.includes("it_load_mw")}
+                        flash={lastFilledParamKey === "it_load_mw"}
                       />
                       <ParamCard
                         label="PUE"
-                        value={proposal.pue.toString()}
+                        value={Number(autofillPreview.pue ?? 0).toString()}
                         ready={revealedParamKeys.includes("pue")}
+                        flash={lastFilledParamKey === "pue"}
                       />
                       <ParamCard
                         label="WUE"
-                        value={proposal.wue.toString()}
+                        value={Number(autofillPreview.wue ?? 0).toString()}
                         ready={revealedParamKeys.includes("wue")}
+                        flash={lastFilledParamKey === "wue"}
                       />
                       <ParamCard
                         label="Cooling"
-                        value={proposal.cooling_type.replace("_", " ")}
+                        value={String(autofillPreview.cooling_type ?? "").replace("_", " ")}
                         ready={revealedParamKeys.includes("cooling_type")}
+                        flash={lastFilledParamKey === "cooling_type"}
                       />
                       <ParamCard
                         label="Facility Type"
-                        value={proposal.facility_type}
+                        value={String(autofillPreview.facility_type ?? "")}
                         ready={revealedParamKeys.includes("facility_type")}
+                        flash={lastFilledParamKey === "facility_type"}
                       />
                       <ParamCard
                         label="CAPEX"
-                        value={`$${proposal.capex_cad.toLocaleString()}M CAD`}
+                        value={`$${Number(autofillPreview.capex_cad ?? 0).toLocaleString()}M CAD`}
                         ready={revealedParamKeys.includes("capex_cad")}
+                        flash={lastFilledParamKey === "capex_cad"}
                       />
                       <ParamCard
                         label="Construction"
-                        value={`${proposal.construction_months} months`}
+                        value={`${Number(autofillPreview.construction_months ?? 0)} months`}
                         ready={revealedParamKeys.includes("construction_months")}
+                        flash={lastFilledParamKey === "construction_months"}
                       />
                     </div>
 
                     <div className="flex flex-wrap gap-3 animate-fade-in-up">
                       <ParamBadge
                         label="On-site generation"
-                        active={proposal.has_onsite_generation}
+                        active={Boolean(autofillPreview.has_onsite_generation)}
                         ready={revealedParamKeys.includes("has_onsite_generation")}
                       />
                       <ParamBadge
                         label="Renewable PPA"
-                        active={proposal.renewable_ppa}
+                        active={Boolean(autofillPreview.renewable_ppa)}
                         ready={revealedParamKeys.includes("renewable_ppa")}
                       />
                     </div>
@@ -541,6 +639,161 @@ export default function Home() {
                             <>
                               <Loader2 className="size-5 animate-spin" />
                               Finalizing parameter extraction…
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="size-5" />
+                              Run Impact Assessment
+                            </>
+                          )}
+                        </span>
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {intakeMode === "manual" && proposal && (
+                  <div className="mt-5 space-y-4 animate-fade-in-up">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Manual Parameters
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Default values are prefilled and can be edited before running assessment.
+                    </p>
+
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Address
+                        <input
+                          className="field"
+                          value={proposal.address}
+                          onChange={(e) => updateProposalField("address", e.target.value)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Province
+                        <select
+                          className="field"
+                          value={proposal.province}
+                          onChange={(e) => updateProposalField("province", e.target.value as DataCentreProposal["province"])}
+                        >
+                          {(["ON", "AB", "BC", "QC", "MB", "SK", "NS", "NB", "NL", "PE"] as const).map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        IT Load (MW)
+                        <input
+                          className="field"
+                          type="number"
+                          value={proposal.it_load_mw}
+                          onChange={(e) => updateProposalField("it_load_mw", Number(e.target.value) || 0)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        PUE
+                        <input
+                          className="field"
+                          type="number"
+                          step="0.001"
+                          value={proposal.pue}
+                          onChange={(e) => updateProposalField("pue", Number(e.target.value) || 0)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        WUE
+                        <input
+                          className="field"
+                          type="number"
+                          step="0.001"
+                          value={proposal.wue}
+                          onChange={(e) => updateProposalField("wue", Number(e.target.value) || 0)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Cooling Type
+                        <select
+                          className="field"
+                          value={proposal.cooling_type}
+                          onChange={(e) => updateProposalField("cooling_type", e.target.value as DataCentreProposal["cooling_type"])}
+                        >
+                          <option value="air">air</option>
+                          <option value="evaporative">evaporative</option>
+                          <option value="liquid_immersion">liquid immersion</option>
+                          <option value="hybrid">hybrid</option>
+                        </select>
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Facility Type
+                        <select
+                          className="field"
+                          value={proposal.facility_type}
+                          onChange={(e) => updateProposalField("facility_type", e.target.value as DataCentreProposal["facility_type"])}
+                        >
+                          <option value="hyperscale">hyperscale</option>
+                          <option value="enterprise">enterprise</option>
+                          <option value="colocation">colocation</option>
+                        </select>
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        CAPEX (CAD millions)
+                        <input
+                          className="field"
+                          type="number"
+                          value={proposal.capex_cad}
+                          onChange={(e) => updateProposalField("capex_cad", Number(e.target.value) || 0)}
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-xs font-semibold text-slate-500">
+                        Construction Months
+                        <input
+                          className="field"
+                          type="number"
+                          value={proposal.construction_months}
+                          onChange={(e) => updateProposalField("construction_months", Number(e.target.value) || 0)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap gap-5 text-sm text-slate-600">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={proposal.has_onsite_generation}
+                          onChange={(e) => updateProposalField("has_onsite_generation", e.target.checked)}
+                        />
+                        On-site generation
+                      </label>
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={proposal.renewable_ppa}
+                          onChange={(e) => updateProposalField("renewable_ppa", e.target.checked)}
+                        />
+                        Renewable PPA
+                      </label>
+                    </div>
+
+                    <form onSubmit={onSubmitAssessment} className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="group relative w-full overflow-hidden rounded-xl bg-emerald-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 hover:shadow-emerald-600/35 disabled:opacity-70 disabled:cursor-not-allowed md:w-auto md:min-w-[280px]"
+                      >
+                        <span className="relative z-10 flex items-center justify-center gap-2">
+                          {loading ? (
+                            <>
+                              <Loader2 className="size-5 animate-spin" />
+                              Running assessment…
                             </>
                           ) : (
                             <>
@@ -829,9 +1082,9 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
   );
 }
 
-function ParamCard({ label, value, ready }: { label: string; value: string; ready: boolean }) {
+function ParamCard({ label, value, ready, flash = false }: { label: string; value: string; ready: boolean; flash?: boolean }) {
   return (
-    <div className={`glass rounded-xl px-4 py-3 transition-opacity ${ready ? "animate-fade-in-up" : "opacity-70"}`}>
+    <div className={`glass rounded-xl px-4 py-3 transition-all ${ready ? "animate-fade-in-up" : "opacity-70"} ${flash ? "ring-2 ring-cyan-300/70 shadow-md shadow-cyan-200/50" : ""}`}>
       <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
       {ready ? (
         <p className="mt-1 text-sm font-bold text-slate-800">{value}</p>
