@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     memo_job_queue_maxsize: int = 32
     memo_job_worker_count: int = 1
     memo_job_timeout_seconds: float = 180.0
+    bitnet_health_cache_ttl_seconds: int = 30
+    memo_verifier_mode: str = "conditional"
 
 
 @lru_cache(maxsize=1)

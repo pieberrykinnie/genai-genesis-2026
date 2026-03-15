@@ -213,8 +213,9 @@ def test_write_memo_bitnet_path(client: TestClient) -> None:
         patch.object(settings, "llm_backend", "bitnet"),
         patch.object(settings, "bitnet_api_base", "http://127.0.0.1:8080/v1"),
         patch.object(settings, "bitnet_model", "HF1BitLLM/Llama3-8B-1.58-100B-tokens"),
+        patch.object(settings, "memo_verifier_mode", "conditional"),
         patch(
-            "orchestrator.railtracks_flow.check_bitnet_health",
+            "orchestrator.railtracks_flow.check_bitnet_health_cached",
             new=AsyncMock(
                 return_value={
                     "reachable": True,
@@ -234,4 +235,4 @@ def test_write_memo_bitnet_path(client: TestClient) -> None:
     assert payload["methodology"]["railtacks_used"] is True
     assert payload["methodology"]["railtacks_verification_passed"] is True
     assert payload["memo"]["executive_summary"] == "BitNet test summary for 100 MW data centre in Alberta."
-    assert call_mock.call_count == 2, f"Expected 2 rt.call invocations (memo writer + verifier), got {call_mock.call_count}"
+    assert call_mock.call_count == 1, f"Expected 1 rt.call invocation (memo writer only), got {call_mock.call_count}"

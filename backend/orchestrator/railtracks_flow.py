@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
@@ -23,7 +25,7 @@ from data_sources import (
     get_annual_mean_temp,
     fetch_site_fit_datacenter_context,
 )
-from llm.providers import check_bitnet_health
+from llm.providers import check_bitnet_health_cached
 from ml.grid_strain.predict import predict_grid_strain
 from ml.site_fit.predict import predict_site_fit
 from models import (
@@ -43,6 +45,7 @@ from policy.clause_catalog import CLAUSE_CATALOG
 from policy.engine import select_policy
 
 ProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 async def _emit(progress_callback: ProgressCallback | None, stage: str, pct: int) -> None:
@@ -71,6 +74,47 @@ def _parse_aqhi_value(aqhi_label: str) -> float:
         return float(str(aqhi_label).split()[0])
     except Exception:
         return 3.0
+
+
+def _memo_evidence_snapshot(evidence_pack: dict[str, Any]) -> dict[str, Any]:
+    environmental = evidence_pack.get("environmental", {}) if isinstance(evidence_pack, dict) else {}
+    economic = evidence_pack.get("economic", {}) if isinstance(evidence_pack, dict) else {}
+    sociological = evidence_pack.get("sociological", {}) if isinstance(evidence_pack, dict) else {}
+    grid = evidence_pack.get("grid_strain", {}) if isinstance(evidence_pack, dict) else {}
+    public_context = evidence_pack.get("public_context", {}) if isinstance(evidence_pack, dict) else {}
+
+    return {
+        "environmental": {
+            "annual_carbon_tonnes": environmental.get("annual_carbon_tonnes"),
+            "total_water_litres_per_day": environmental.get("total_water_litres_per_day"),
+            "pct_of_municipal_daily_supply": environmental.get("pct_of_municipal_daily_supply"),
+            "grid_score": environmental.get("grid_score"),
+        },
+        "economic": {
+            "direct_permanent_jobs": economic.get("direct_permanent_jobs"),
+            "net_fiscal_impact_10yr_cad": economic.get("net_fiscal_impact_10yr_cad"),
+            "estimated_total_tax_revenue_10yr_cad": economic.get("estimated_total_tax_revenue_10yr_cad"),
+            "jobs_gap": economic.get("jobs_gap"),
+        },
+        "sociological": {
+            "community_vulnerability_index": sociological.get("community_vulnerability_index"),
+            "indigenous_flag": sociological.get("indigenous_flag"),
+            "nearest_first_nation_km": sociological.get("nearest_first_nation_km"),
+            "residential_population_in_noise_zone": sociological.get("residential_population_in_noise_zone"),
+        },
+        "grid_strain": {
+            "strain_probability": grid.get("strain_probability"),
+            "rate_increase_probability": grid.get("rate_increase_probability"),
+            "predicted_strain_level": grid.get("predicted_strain_level"),
+            "confidence": grid.get("confidence"),
+            "model_version": grid.get("model_version"),
+        },
+        "public_context": {
+            "municipality": public_context.get("municipality"),
+            "drought_level": public_context.get("drought_level"),
+            "aqhi": public_context.get("aqhi"),
+        },
+    }
 
 
 async def _fetch_public_context(proposal: ProposalInput) -> tuple[dict[str, Any], dict[str, str]]:
@@ -198,10 +242,14 @@ async def _write_memo(
     economic: EconomicImpact,
     sociological: SociologicalImpact,
 ) -> tuple[CouncilMemo, dict[str, Any]]:
+    memo_started = time.perf_counter()
     railtracks_meta: dict[str, Any] = {
         "railtacks_used": False,
         "railtacks_workflow": "council_decision_workflow_v1",
         "railtacks_verification_passed": False,
+        "memo_fallback_reason": "",
+        "memo_llm_calls": 0,
+        "memo_elapsed_ms": 0,
     }
     settings = get_settings()
     llm_backend = settings.llm_backend.strip().lower()
@@ -211,14 +259,19 @@ async def _write_memo(
     elif llm_backend == "bitnet":
         bitnet_configured = bool(settings.bitnet_api_base.strip()) and bool(settings.bitnet_model.strip())
         if bitnet_configured:
-            health = await check_bitnet_health(settings)
+            health = await check_bitnet_health_cached(settings)
             llm_ready = bool(health.get("reachable", False))
+            if not llm_ready:
+                railtracks_meta["memo_fallback_reason"] = str(health.get("error") or "bitnet_unreachable")
         else:
             llm_ready = False
+            railtracks_meta["memo_fallback_reason"] = "bitnet_not_configured"
     else:
         llm_ready = False
+        railtracks_meta["memo_fallback_reason"] = f"unsupported_llm_backend:{llm_backend}"
 
     if not llm_ready:
+        railtracks_meta["memo_elapsed_ms"] = int((time.perf_counter() - memo_started) * 1000)
         return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
 
     try:
@@ -229,6 +282,8 @@ async def _write_memo(
 
         memo_writer_agent = get_memo_writer_agent()
         memo_grounding_verifier_agent = get_memo_grounding_verifier_agent()
+        verifier_mode = settings.memo_verifier_mode.strip().lower()
+        compact_evidence = _memo_evidence_snapshot(evidence_pack)
 
         clause_text = {clause_id: CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids}
 
@@ -246,7 +301,7 @@ async def _write_memo(
                 "In recommendation_section, include the exact recommendation token from policy_decision.recommendation.",
                 f"Proposal: {proposal_obj.model_dump_json()}",
                 f"Policy decision: {policy_obj.model_dump_json()}",
-                f"Evidence pack: {evidence_obj}",
+                f"Evidence summary: {evidence_obj}",
                 f"Clause text map: {clause_obj}",
             ]
             if validation_errors:
@@ -271,7 +326,7 @@ async def _write_memo(
                     "Do not fail for style, verbosity, or omitted non-critical fields.",
                     f"Proposal: {proposal_obj.model_dump_json()}",
                     f"Policy decision: {policy_obj.model_dump_json()}",
-                    f"Evidence pack: {evidence_obj}",
+                    f"Evidence summary: {evidence_obj}",
                     f"Memo: {memo_obj.model_dump_json()}",
                     f"Clause text map: {clause_obj}",
                     "Set passed=true only if there are no issues.",
@@ -283,14 +338,26 @@ async def _write_memo(
             rt.context.update(
                 {
                     "proposal": proposal.model_dump(mode="python"),
-                    "evidence_pack": evidence_pack,
+                    "evidence_pack": compact_evidence,
                     "policy_decision": policy.model_dump(mode="python"),
                 }
             )
 
-            draft_raw = await rt.call(
+            llm_call_count = 0
+            stage_timings_ms: dict[str, int] = {}
+
+            async def _timed_llm_call(stage: str, agent: Any, prompt: str) -> Any:
+                nonlocal llm_call_count
+                started = time.perf_counter()
+                llm_call_count += 1
+                response = await rt.call(agent, prompt)
+                stage_timings_ms[stage] = int((time.perf_counter() - started) * 1000)
+                return response
+
+            draft_raw = await _timed_llm_call(
+                "draft_write",
                 memo_writer_agent,
-                _memo_writer_prompt(proposal, evidence_pack, policy, clause_text),
+                _memo_writer_prompt(proposal, compact_evidence, policy, clause_text),
             )
             draft, draft_parse_errors = coerce_council_memo(draft_raw)
             if draft is None:
@@ -301,11 +368,16 @@ async def _write_memo(
                 verifier_parse_errors: list[str] = []
             else:
                 deterministic_ok, deterministic_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
-                verifier_raw = await rt.call(
-                    memo_grounding_verifier_agent,
-                    _memo_verifier_prompt(proposal, evidence_pack, policy, draft, clause_text),
-                )
-                verifier_passed, verifier_issues, verifier_parse_errors = coerce_verifier_result(verifier_raw)
+                should_verify = verifier_mode == "always" or not deterministic_ok
+                if should_verify:
+                    verifier_raw = await _timed_llm_call(
+                        "draft_verify",
+                        memo_grounding_verifier_agent,
+                        _memo_verifier_prompt(proposal, compact_evidence, policy, draft, clause_text),
+                    )
+                    verifier_passed, verifier_issues, verifier_parse_errors = coerce_verifier_result(verifier_raw)
+                else:
+                    verifier_passed, verifier_issues, verifier_parse_errors = True, [], []
 
             issues = list(deterministic_errors)
             issues.extend(verifier_issues)
@@ -315,10 +387,13 @@ async def _write_memo(
                     "memo": draft.model_dump(mode="python"),
                     "verification_passed": True,
                     "issues": [],
+                    "llm_call_count": llm_call_count,
+                    "stage_timings_ms": stage_timings_ms,
                 }
 
-            evidence_with_errors = {**evidence_pack, "validation_errors": issues}
-            repaired_raw = await rt.call(
+            evidence_with_errors = {**compact_evidence, "validation_errors": issues}
+            repaired_raw = await _timed_llm_call(
+                "repair_write",
                 memo_writer_agent,
                 _memo_writer_prompt(
                     proposal,
@@ -336,16 +411,23 @@ async def _write_memo(
                     ).model_dump(mode="python"),
                     "verification_passed": False,
                     "issues": [*issues, *repaired_parse_errors],
+                    "llm_call_count": llm_call_count,
+                    "stage_timings_ms": stage_timings_ms,
                 }
 
             repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
-            repaired_verifier_raw = await rt.call(
-                memo_grounding_verifier_agent,
-                _memo_verifier_prompt(proposal, evidence_pack, policy, repaired, clause_text),
-            )
-            repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = coerce_verifier_result(
-                repaired_verifier_raw
-            )
+            should_verify_repair = verifier_mode == "always" or not repaired_ok
+            if should_verify_repair:
+                repaired_verifier_raw = await _timed_llm_call(
+                    "repair_verify",
+                    memo_grounding_verifier_agent,
+                    _memo_verifier_prompt(proposal, compact_evidence, policy, repaired, clause_text),
+                )
+                repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = coerce_verifier_result(
+                    repaired_verifier_raw
+                )
+            else:
+                repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = True, [], []
             repaired_issues = list(repaired_errors)
             repaired_issues.extend(repaired_verifier_issues)
             repaired_issues.extend(repaired_verifier_parse_errors)
@@ -353,13 +435,29 @@ async def _write_memo(
                 "memo": repaired.model_dump(mode="python"),
                 "verification_passed": bool(repaired_ok and repaired_verifier_passed),
                 "issues": repaired_issues,
+                "llm_call_count": llm_call_count,
+                "stage_timings_ms": stage_timings_ms,
             }
 
         workflow_result, _session = await _run_workflow()
         railtracks_meta["railtacks_used"] = True
         railtracks_meta["railtacks_verification_passed"] = bool(workflow_result.get("verification_passed", False))
+        railtracks_meta["memo_llm_calls"] = int(workflow_result.get("llm_call_count", 0))
+        railtracks_meta["memo_stage_timings_ms"] = workflow_result.get("stage_timings_ms", {})
+        railtracks_meta["memo_elapsed_ms"] = int((time.perf_counter() - memo_started) * 1000)
+        logger.info(
+            "memo_workflow_complete backend=%s calls=%s verify_passed=%s elapsed_ms=%s stage_timings=%s",
+            llm_backend,
+            railtracks_meta["memo_llm_calls"],
+            railtracks_meta["railtacks_verification_passed"],
+            railtracks_meta["memo_elapsed_ms"],
+            railtracks_meta.get("memo_stage_timings_ms", {}),
+        )
         return CouncilMemo(**workflow_result["memo"]), railtracks_meta
-    except Exception:
+    except Exception as exc:
+        railtracks_meta["memo_fallback_reason"] = f"workflow_exception:{exc.__class__.__name__}"
+        railtracks_meta["memo_elapsed_ms"] = int((time.perf_counter() - memo_started) * 1000)
+        logger.exception("memo_workflow_failed reason=%s", railtracks_meta["memo_fallback_reason"])
         return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
 
 
@@ -550,5 +648,9 @@ async def assess_flow(
             "railtacks_used": railtracks_meta["railtacks_used"],
             "railtacks_workflow": railtracks_meta["railtacks_workflow"],
             "railtacks_verification_passed": railtracks_meta["railtacks_verification_passed"],
+            "memo_fallback_reason": railtracks_meta.get("memo_fallback_reason", ""),
+            "memo_llm_calls": railtracks_meta.get("memo_llm_calls", 0),
+            "memo_elapsed_ms": railtracks_meta.get("memo_elapsed_ms", 0),
+            "memo_stage_timings_ms": railtracks_meta.get("memo_stage_timings_ms", {}),
         },
     )
