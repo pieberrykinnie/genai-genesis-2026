@@ -7,6 +7,96 @@ uv sync
 uv run fastapi dev main.py
 ```
 
+## Local BitNet Runtime Setup (Linux, CPU)
+
+The backend already supports OpenAI-compatible local model servers.
+This section adds a practical path to run
+`HF1BitLLM/Llama3-8B-1.58-100B-tokens` via Microsoft BitNet.
+
+### 1) Preflight checks
+
+Run preflight to verify host tools and rough RAM/disk headroom:
+
+```bash
+./scripts/bitnet_preflight.sh
+```
+
+### 2) Build BitNet and prepare model
+
+From a sibling directory (outside this backend project):
+
+```bash
+cd ..
+git clone --recursive https://github.com/microsoft/BitNet.git
+cd BitNet
+
+# Optional but recommended: isolated env for BitNet toolchain
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Prepare Llama3-8B-1.58 artifacts
+python setup_env.py --hf-repo HF1BitLLM/Llama3-8B-1.58-100B-tokens --quant-type i2_s
+```
+
+After setup completes, locate the generated GGUF model under `models/`.
+Use the path in step 3.
+
+### 3) Start local server (prototype)
+
+Use helper wrapper from this backend repo:
+
+```bash
+BITNET_HOME=../BitNet \
+BITNET_MODEL_PATH=../BitNet/models/HF1BitLLM-Llama3-8B-1.58-100B-tokens/ggml-model-i2_s.gguf \
+./scripts/start_bitnet_server.sh
+```
+
+Defaults:
+- Host: `127.0.0.1`
+- Port: `8080`
+- Context: `4096`
+- Threads: half of CPU cores (minimum 2)
+
+### 4) Connect backend to BitNet
+
+Set `.env` values:
+
+```bash
+LLM_BACKEND=bitnet
+BITNET_API_BASE=http://127.0.0.1:8080/v1
+BITNET_MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens
+BITNET_API_KEY=bitnet-local
+```
+
+Start backend:
+
+```bash
+uv run fastapi dev main.py
+```
+
+### 5) Validate runtime and integration
+
+```bash
+# Endpoint-level readiness
+curl -s http://127.0.0.1:8080/v1/models | jq .
+
+# App-level readiness
+curl -s http://127.0.0.1:8000/health/llm | jq .
+
+# Capability probe from this repository
+uv run python scripts/probe_bitnet_server.py \
+	--base-url http://127.0.0.1:8080/v1 \
+	--model HF1BitLLM/Llama3-8B-1.58-100B-tokens
+```
+
+Expected:
+- `models_reachable=True`
+- `basic_chat_ok=True`
+- `json_object_ok=True`
+
+`json_schema` may fail on local llama.cpp-style servers; this is expected in current flow.
+
 ## Environment Variables
 
 ```bash
@@ -76,3 +166,41 @@ If direct script download returns HTML interstitial pages for IESO files:
 Then retrain:
 
 - `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl`
+
+## Systemd Example (production hardening)
+
+Create `/etc/systemd/system/bitnet-llama.service`:
+
+```ini
+[Unit]
+Description=BitNet llama-server
+After=network.target
+
+[Service]
+Type=simple
+User=bitnet
+Group=bitnet
+WorkingDirectory=/opt/BitNet
+Environment=MODEL_PATH=/opt/BitNet/models/HF1BitLLM-Llama3-8B-1.58-100B-tokens/ggml-model-i2_s.gguf
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
+Environment=CTX_SIZE=4096
+Environment=THREADS=8
+Environment=N_PREDICT=1024
+Environment=TEMPERATURE=0.3
+ExecStart=/opt/genai-genesis-2026/backend/scripts/start_bitnet_server.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now bitnet-llama
+sudo systemctl status bitnet-llama
+```
