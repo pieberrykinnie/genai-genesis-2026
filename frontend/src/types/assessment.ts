@@ -82,6 +82,7 @@ export interface ImpactAssessment {
   };
   negotiation_playbook: string[];
   report_narrative: string;
+  methodology?: Record<string, unknown>;
 }
 
 export interface StreamEvent {
@@ -89,4 +90,38 @@ export interface StreamEvent {
   pct: number;
   result?: ImpactAssessment;
   error?: unknown;
+}
+
+export interface ExtractProposalResponse extends Partial<DataCentreProposal> {
+  _extraction?: {
+    mode: string;
+    confidence: "high" | "moderate" | "low" | string;
+    missing_fields: string[];
+    warnings: string[];
+  };
+}
+
+export interface MemoJobSubmitResponse {
+  job_id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | string;
+}
+
+export interface MemoJobStatusResponse {
+  job_id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | string;
+  has_result: boolean;
+  error?: string | null;
+}
+
+export interface MemoJobResultResponse {
+  job_id: string;
+  status: "succeeded" | "failed" | string;
+  result: {
+    proposal_id?: string;
+    memo?: ImpactAssessment["memo"];
+    report_narrative?: string;
+    methodology?: Record<string, unknown>;
+    fallback_used?: boolean;
+    assessment?: ImpactAssessment;
+  };
 }

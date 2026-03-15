@@ -1,95 +1,103 @@
 # DataSite Impact Analyzer
 
-AI decision support for Canadian city councils reviewing new data centre proposals.
+AI decision support for Canadian municipalities reviewing new data centre proposals.
 
 Built with railtracks.
 
-## Why This Matters
+## What this project is
+DataSite helps councils and residents understand the trade-offs of proposed data centres before approval.
 
-Municipal councils are being asked to approve large data centre projects with incomplete evidence. DataSite gives councils a defensible, transparent assessment before they negotiate or vote.
+For a proposal, it returns:
+- Environmental impact: carbon, water demand, grid pressure
+- Economic impact: jobs, tax revenue, net fiscal impact
+- Sociological context: community vulnerability, noise exposure, advisory context
+- ML signal: grid strain probability from an XGBoost model
+- Deterministic policy recommendation + clause selection
+- Grounded memo and negotiation playbook
 
-The system combines:
-- Real Canadian public data
-- Deterministic impact formulas
-- A trained XGBoost grid-strain model
-- A Railtracks memo workflow with grounding checks
+## Why it matters
+Municipal decisions on large data centres can lock in infrastructure pressure for years. DataSite turns complex technical assumptions into transparent, auditable outputs that non-technical stakeholders can understand.
 
-## What The App Delivers
-
-For each proposal, DataSite returns:
-- Environmental impact: carbon, water draw, grid pressure
-- Economic impact: jobs, tax, net fiscal effect
-- Sociological impact: community vulnerability, Indigenous context, noise exposure
-- ML prediction: grid strain probability + top model features
-- Policy output: recommendation and selected negotiation clauses
-- Decision memo: grounded council-ready narrative
-- Data freshness: per-source status (`live`, `cached`, `static_reference`, `unavailable:*`)
-
-## Demo-Ready User Flow
-
-1. Proposal Intake
-2. Location Context (interactive map + site marker + estimated noise radius)
-3. Impact Results (plain-language summaries)
-4. Decision Brief (playbook + evidence freshness)
+## Product flow
+1. Proposal Intake (manual form or PDF extraction)
+2. Location Context (map, noise radius, local pressure interpretation)
+3. Impact Results (plain-language implications)
+4. Decision Brief (citizen/councillor actions + memo)
 
 ## Architecture
+- Frontend: Next.js, TypeScript, Tailwind, Leaflet
+- Backend: FastAPI, deterministic calculators, ML inference
+- Orchestration: Railtracks workflow (`council_decision_workflow`)
+- Model artifact: `backend/models/grid_strain_model.pkl`
+- Local data cache/storage: SQLite + local files
 
-- Frontend: Next.js + TypeScript + Tailwind + Leaflet (OSM tiles)
-- Backend: FastAPI + deterministic calculators + ML inference
-- Orchestration: Railtracks session workflow
-- Model: `xgboost_v1_ieso_aeso_2024`
-- Storage: local SQLite/cache for public data lookups
-
-Assessment order:
-1. Geocode
-2. Fetch public data
+Assessment sequence:
+1. Geocode address
+2. Fetch public context data
 3. Run deterministic calculations
-4. Run ML inference
+4. Run grid model inference
 5. Select deterministic policy
-6. Run Railtracks memo + verifier + one repair pass
+6. Run Railtracks memo workflow + verifier
+
+## Repository structure
+```text
+genai-genesis-2026/
+  backend/
+    data_sources/
+    ingestion/
+    orchestrator/
+    scripts/
+    tests/
+    main.py
+  frontend/
+    src/app/
+    src/components/
+    src/types/
+  docs/
+    results/
+  projectspec.md
+  projectoverview.md
+  DATA_DOWNLOAD_MANUAL.md
+```
 
 ## API
-
 - `GET /health`
 - `POST /api/assess`
 - `POST /api/assess/stream` (SSE)
+- `POST /api/memo-jobs`
+- `GET /api/memo-jobs/{job_id}`
+- `GET /api/memo-jobs/{job_id}/result`
+- `POST /api/extract-proposal`
 
-SSE includes a visible Railtracks stage:
-- `proposal_ingest`
-- `fetching_public_data`
-- `running_calculations`
-- `running_grid_model`
-- `running_site_fit_model`
-- `selecting_policy`
-- `railtracks_workflow`
-- `writing_memo`
-- `complete`
+## Prerequisites
+- Python 3.11+ (managed via `uv`)
+- Node 20+ and `pnpm`
+- Git
 
 ## Quickstart
+From repo root, run backend and frontend in separate terminals.
 
-From repo root:
-
+### 1) Backend
 ```bash
 cd backend
 uv sync
 uv run uvicorn main:app --reload --host 127.0.0.1 --port 8010
 ```
 
-In a second terminal:
-
+### 2) Frontend
 ```bash
 cd frontend
-pnpm install
+pnpm install --package-import-method=copy
 pnpm dev
 ```
 
-Frontend: `http://localhost:3000`
-Backend: `http://127.0.0.1:8010`
+App URLs:
+- Frontend: `http://localhost:3000`
+- Backend: `http://127.0.0.1:8010`
 
-## Required Environment Variables
+## Environment variables
 
-Backend (`backend/.env`):
-
+### Backend (`backend/.env`)
 ```bash
 MAPTILER_API_KEY=
 NOMINATIM_USER_AGENT=genai-genesis-2026-local-dev/1.0
@@ -97,65 +105,90 @@ GROQ_API_KEY=
 GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_API_BASE=https://api.groq.com/openai/v1
 STRICT_DATA_MODE=true
+MODEL_PATH=./models/grid_strain_model.pkl
 ```
 
-Frontend (`frontend/.env.local`):
-
+### Frontend (`frontend/.env.local`)
 ```bash
-NEXT_PUBLIC_MAPTILER_API_KEY=
 NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8010
+NEXT_PUBLIC_MAPTILER_API_KEY=
+NEXT_PUBLIC_USE_MAPTILER_TILES=false
 ```
 
-## Data + Model Commands
+Notes:
+- If MapTiler tiles fail, the map falls back to OpenStreetMap tiles.
+- Geocoding uses MapTiler first, then Nominatim fallback.
 
+## Data and model workflow
+### Download / refresh data
 ```bash
 cd backend
 uv run python scripts/download_data.py
+```
+
+### Load StatsCan CSVs to SQLite
+```bash
 uv run python scripts/load_census_to_sqlite.py --db ./data/census_csd.db --census-csv ./data/98-10-0001-01.zip --water-csv ./data/38-10-0250-01.zip
+```
+
+### Train grid model
+```bash
 uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl
 ```
 
-Evaluation artifacts:
-
+Use synthetic mode only when explicitly needed:
 ```bash
-uv run python scripts/evaluate_railtracks_workflow.py --skip-judge
+uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl --allow-synthetic
 ```
 
-Outputs:
-- `docs/results/railtracks_eval_result.json`
-- `docs/results/railtracks_eval_summary.md`
-
-## Validation Commands
-
+## Validation
+### Backend tests
 ```bash
 cd backend
 uv run python -m pytest -q
+```
+
+### Frontend checks
+```bash
+cd frontend
+pnpm lint
+pnpm build
+```
+
+### Railtracks evaluation artifacts
+```bash
+cd backend
 uv run python scripts/evaluate_railtracks_workflow.py --skip-judge
 ```
 
-## Railtracks Usage (Submission Notes)
+Output files:
+- `docs/results/railtracks_eval_result.json`
+- `docs/results/railtracks_eval_summary.md`
 
-Railtracks is used for:
-- session-based orchestration (`council_decision_workflow`)
-- memo generation agent
-- memo grounding verifier agent
-- repair pass when verifier/deterministic checks fail
-- evaluation artifact generation
+## Railtracks usage in this project
+Railtracks is used for substantive orchestration and quality control:
+- Session workflow: `council_decision_workflow`
+- Memo generation agent
+- Memo grounding verifier agent
+- Single repair pass on verifier failure
+- Evaluation harness to produce reproducible workflow artifacts
 
-Current workflow evaluation scenarios pass in local run:
-- AB high-load
-- QC lower-risk
-- malformed-address edge case
+## Demo scenarios
+For a convincing demo run these presets in the UI:
+- Baseline AB
+- Balanced QC
+- Beacon-like High Load
 
-## Core Data Sources
+Then compare directional differences in:
+- water-share pressure
+- grid strain probability
+- recommendation strictness
 
-- IESO hourly demand reports
-- AESO market/system historical data
-- Statistics Canada census + water use tables
-- Electricity Maps (when available) with deterministic fallback
-- ECCC AQHI and drought context fallbacks
-- Indigenous context cache/fallback tables
+## Additional docs
+- Project spec: `projectspec.md`
+- Project overview + judging mapping: `projectoverview.md`
+- Data download guide: `DATA_DOWNLOAD_MANUAL.md`
+- Backend advanced setup (BitNet, memo jobs, scripts): `backend/README.md`
 
 ## License
-
 MIT
