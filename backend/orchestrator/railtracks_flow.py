@@ -180,7 +180,9 @@ def _fallback_memo(
         ),
         recommendation_section=(
             f"Council should {recommendation_label}. Triggered policy rules: "
-            f"{', '.join(policy.triggered_rules) if policy.triggered_rules else 'none'}."
+            f"{', '.join(policy.triggered_rules) if policy.triggered_rules else 'none'}.\n"
+            "For citizens: Ask for plain-language public reporting on water, grid, jobs, and noise.\n"
+            "For councillors: Tie approvals and incentives to audited performance milestones and enforceable clauses."
         ),
         clause_narratives=clause_narratives,
         disclaimer="Narrative generated from deterministic fallback calculations; validate against live source refresh before final use.",
@@ -226,6 +228,8 @@ async def _write_memo(
                 "Return JSON only, no markdown and no extra commentary.",
                 "Use only provided evidence and selected clauses.",
                 "In recommendation_section, include the exact recommendation token from policy_decision.recommendation.",
+                "In recommendation_section, include two labeled subsections: 'For citizens:' and 'For councillors:'.",
+                "Use plain language suitable for both residents and councillors.",
                 f"Proposal: {proposal_obj.model_dump_json()}",
                 f"Policy decision: {policy_obj.model_dump_json()}",
                 f"Evidence pack: {evidence_obj}",

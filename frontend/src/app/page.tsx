@@ -2,7 +2,12 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { ArrowLeft, ArrowRight, Landmark, UserRound } from "lucide-react";
 
+import { AnimatedGradientText } from "@/components/magicui/animated-gradient-text";
+import { BlurFade } from "@/components/magicui/blur-fade";
+import { ShinyButton } from "@/components/magicui/shiny-button";
+import { Button } from "@/components/ui/button";
 import type { DataCentreProposal, ImpactAssessment, StreamEvent } from "@/types/assessment";
 
 const DEFAULT_PROPOSAL: DataCentreProposal = {
@@ -19,6 +24,9 @@ const DEFAULT_PROPOSAL: DataCentreProposal = {
   renewable_ppa: false,
 };
 
+const STEPS = ["Proposal", "Location", "Impacts", "Decision"] as const;
+type Persona = "citizen" | "councillor";
+
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
 const LocationContextMap = dynamic(() => import("@/components/location-context-map").then((mod) => mod.LocationContextMap), {
   ssr: false,
@@ -31,15 +39,13 @@ export default function Home() {
   const [progress, setProgress] = useState<StreamEvent | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [persona, setPersona] = useState<Persona>("citizen");
 
-  const activeStep = useMemo(() => {
-    if (!progress && !assessment) return 1;
-    if (progress && progress.pct < 35) return 1;
-    if ((progress && progress.pct < 55) || (!progress && assessment)) return 2;
-    if (progress && progress.pct < 85) return 3;
-    if (assessment) return 4;
-    return 1;
-  }, [assessment, progress]);
+  const canGoNext = useMemo(() => {
+    if (currentStep === 1) return Boolean(assessment);
+    return currentStep < 4;
+  }, [assessment, currentStep]);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -47,6 +53,7 @@ export default function Home() {
     setError(null);
     setAssessment(null);
     setProgress({ stage: "starting", pct: 0 });
+    setCurrentStep(1);
 
     try {
       const res = await fetch("/api/assess/stream", {
@@ -97,268 +104,410 @@ export default function Home() {
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-8 md:py-10">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <header className="hero-panel rounded-3xl p-6 md:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-900/80">City Decision Support</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">DataSite Impact Analyzer</h1>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+        <header className="hero-panel rounded-3xl px-6 py-7 md:px-8 md:py-9">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-900/80">Council + Public Decision Tool</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
+            DataSite <AnimatedGradientText speed={1.6}>Impact Analyzer</AnimatedGradientText>
+          </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
-            Understand what a data centre proposal means for local power, water, tax impact, and community risk before approval.
+            Understand what a proposed data centre could mean for your grid, water, taxes, and local quality of life.
           </p>
         </header>
 
-        <Stepper activeStep={activeStep} />
+        <StepHeader currentStep={currentStep} onStepClick={setCurrentStep} />
 
-        <section className="grid gap-6 lg:grid-cols-[1.05fr_1fr]">
-          <Card title="1. Proposal Intake" subtitle="Enter project details used by the impact model.">
-            <form onSubmit={onSubmit} className="space-y-4">
-              <Field label="Project Address">
-                <input
-                  className="field"
-                  value={proposal.address}
-                  onChange={(e) => setProposal((p) => ({ ...p, address: e.target.value }))}
-                  placeholder="e.g., Grande Prairie, Alberta"
-                />
-              </Field>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Province">
-                  <select
-                    className="field"
-                    value={proposal.province}
-                    onChange={(e) => setProposal((p) => ({ ...p, province: e.target.value as DataCentreProposal["province"] }))}
-                  >
-                    {["ON", "AB", "BC", "QC", "MB", "SK", "NS", "NB", "NL", "PE"].map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="IT Load (MW)">
+        <BlurFade key={currentStep} className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm md:p-6">
+          {currentStep === 1 && (
+            <section>
+              <SectionTitle title="1. Proposal" subtitle="Enter the project details you want assessed." />
+              <form onSubmit={onSubmit} className="mt-4 space-y-4">
+                <Field label="Project address">
                   <input
-                    type="number"
                     className="field"
-                    value={proposal.it_load_mw}
-                    onChange={(e) => setProposal((p) => ({ ...p, it_load_mw: Number(e.target.value) }))}
+                    value={proposal.address}
+                    onChange={(e) => setProposal((p) => ({ ...p, address: e.target.value }))}
+                    placeholder="e.g., Grande Prairie, Alberta"
                   />
                 </Field>
-              </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="PUE">
-                  <input
-                    type="number"
-                    className="field"
-                    step="0.01"
-                    value={proposal.pue}
-                    onChange={(e) => setProposal((p) => ({ ...p, pue: Number(e.target.value) }))}
-                  />
-                </Field>
-                <Field label="WUE">
-                  <input
-                    type="number"
-                    className="field"
-                    step="0.01"
-                    value={proposal.wue}
-                    onChange={(e) => setProposal((p) => ({ ...p, wue: Number(e.target.value) }))}
-                  />
-                </Field>
-                <Field label="CAPEX (CAD M)">
-                  <input
-                    type="number"
-                    className="field"
-                    value={proposal.capex_cad}
-                    onChange={(e) => setProposal((p) => ({ ...p, capex_cad: Number(e.target.value) }))}
-                  />
-                </Field>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Cooling Type">
-                  <select
-                    className="field"
-                    value={proposal.cooling_type}
-                    onChange={(e) => setProposal((p) => ({ ...p, cooling_type: e.target.value as DataCentreProposal["cooling_type"] }))}
-                  >
-                    <option value="air">air</option>
-                    <option value="evaporative">evaporative</option>
-                    <option value="liquid_immersion">liquid immersion</option>
-                    <option value="hybrid">hybrid</option>
-                  </select>
-                </Field>
-                <Field label="Facility Type">
-                  <select
-                    className="field"
-                    value={proposal.facility_type}
-                    onChange={(e) => setProposal((p) => ({ ...p, facility_type: e.target.value as DataCentreProposal["facility_type"] }))}
-                  >
-                    <option value="hyperscale">hyperscale</option>
-                    <option value="enterprise">enterprise</option>
-                    <option value="colocation">colocation</option>
-                  </select>
-                </Field>
-              </div>
-
-              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
-                Inputs with highest sensitivity: <strong>IT load</strong>, <strong>PUE</strong>, and <strong>WUE</strong>. Small changes can move risk bands.
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="inline-flex rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-400"
-              >
-                {loading ? "Running Assessment..." : "Run Assessment"}
-              </button>
-            </form>
-
-            {progress && (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-slate-900">Progress: {progress.stage}</span>
-                  <span className="text-slate-600">{progress.pct}%</span>
-                </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                  <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${progress.pct}%` }} />
-                </div>
-              </div>
-            )}
-
-            {error && <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-          </Card>
-
-          <Card title="2. Location Context" subtitle="Map and immediate risk context for this site.">
-            <LocationMap assessment={assessment} />
-            {!assessment && <p className="mt-3 text-sm text-slate-500">Run assessment to populate map context.</p>}
-            {assessment && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <RiskChip label="Grid" value={assessment.environmental.grid_score} />
-                <RiskChip label="Water Share" value={`${assessment.environmental.pct_of_municipal_daily_supply.toFixed(2)}%`} />
-                <RiskChip label="AQHI" value={assessment.sociological.air_quality_baseline} />
-                <RiskChip
-                  label="Noise Radius"
-                  value={
-                    typeof assessment.sociological.estimated_noise_radius_m === "number"
-                      ? `${assessment.sociological.estimated_noise_radius_m.toFixed(0)} m`
-                      : "unavailable"
-                  }
-                />
-              </div>
-            )}
-          </Card>
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-2">
-          <Card title="3. Impact Results" subtitle="Plain-language summary for council discussion.">
-            {!assessment && <p className="text-sm text-slate-500">Results appear after the model run completes.</p>}
-            {assessment && (
-              <div className="space-y-4 text-sm">
-                <NarrativeBlock
-                  title="Environmental"
-                  sentence={`Annual emissions are about ${assessment.environmental.annual_carbon_tonnes.toLocaleString()} tCO2e and daily water demand is ${assessment.environmental.total_water_litres_per_day.toLocaleString()} L.`}
-                />
-                <NarrativeBlock
-                  title="Economic"
-                  sentence={`Estimated net fiscal impact over 10 years is $${assessment.economic.net_fiscal_impact_10yr_cad.toLocaleString()} with ${assessment.economic.direct_permanent_jobs} direct permanent jobs.`}
-                />
-                <NarrativeBlock
-                  title="Grid"
-                  sentence={`Model predicts ${toPct(assessment.grid_strain.strain_probability)} grid strain probability (${assessment.grid_strain.predicted_strain_level}).`}
-                />
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700">
-                  <p className="font-semibold text-slate-900">Composite Decision Signal</p>
-                  <p className="mt-1">{assessment.overall_score.summary_sentence}</p>
-                </div>
-              </div>
-            )}
-          </Card>
-
-          <Card title="4. Decision Brief" subtitle="Negotiation actions and evidence trail.">
-            {!assessment && <p className="text-sm text-slate-500">Decision brief appears after results are generated.</p>}
-            {assessment && (
-              <div className="space-y-4 text-sm">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Negotiation Playbook</p>
-                  <ol className="mt-2 list-decimal space-y-1 pl-5">
-                    {assessment.negotiation_playbook.map((item) => (
-                      <li key={item} className="text-slate-700">
-                        {item}
-                      </li>
-                    ))}
-                  </ol>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Province">
+                    <select
+                      className="field"
+                      value={proposal.province}
+                      onChange={(e) => setProposal((p) => ({ ...p, province: e.target.value as DataCentreProposal["province"] }))}
+                    >
+                      {["ON", "AB", "BC", "QC", "MB", "SK", "NS", "NB", "NL", "PE"].map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="IT load (MW)">
+                    <input
+                      type="number"
+                      className="field"
+                      value={proposal.it_load_mw}
+                      onChange={(e) => setProposal((p) => ({ ...p, it_load_mw: Number(e.target.value) }))}
+                    />
+                  </Field>
                 </div>
 
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Data Freshness / Evidence</p>
-                  <div className="mt-2 max-h-44 overflow-auto rounded-xl border border-slate-200">
-                    <table className="w-full border-collapse text-left text-xs">
-                      <thead className="bg-slate-50 text-slate-500">
-                        <tr>
-                          <th className="px-3 py-2">Source</th>
-                          <th className="px-3 py-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(assessment.data_freshness).map(([k, v]) => (
-                          <tr key={k} className="border-t border-slate-100">
-                            <td className="px-3 py-2 font-medium text-slate-700">{k}</td>
-                            <td className="px-3 py-2 text-slate-600">{String(v)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Field label="PUE (power efficiency)">
+                    <input
+                      type="number"
+                      className="field"
+                      step="0.01"
+                      value={proposal.pue}
+                      onChange={(e) => setProposal((p) => ({ ...p, pue: Number(e.target.value) }))}
+                    />
+                  </Field>
+                  <Field label="WUE (water efficiency)">
+                    <input
+                      type="number"
+                      className="field"
+                      step="0.01"
+                      value={proposal.wue}
+                      onChange={(e) => setProposal((p) => ({ ...p, wue: Number(e.target.value) }))}
+                    />
+                  </Field>
+                  <Field label="CAPEX (CAD M)">
+                    <input
+                      type="number"
+                      className="field"
+                      value={proposal.capex_cad}
+                      onChange={(e) => setProposal((p) => ({ ...p, capex_cad: Number(e.target.value) }))}
+                    />
+                  </Field>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Cooling type">
+                    <select
+                      className="field"
+                      value={proposal.cooling_type}
+                      onChange={(e) => setProposal((p) => ({ ...p, cooling_type: e.target.value as DataCentreProposal["cooling_type"] }))}
+                    >
+                      <option value="air">air</option>
+                      <option value="evaporative">evaporative</option>
+                      <option value="liquid_immersion">liquid immersion</option>
+                      <option value="hybrid">hybrid</option>
+                    </select>
+                  </Field>
+                  <Field label="Facility type">
+                    <select
+                      className="field"
+                      value={proposal.facility_type}
+                      onChange={(e) => setProposal((p) => ({ ...p, facility_type: e.target.value as DataCentreProposal["facility_type"] }))}
+                    >
+                      <option value="hyperscale">hyperscale</option>
+                      <option value="enterprise">enterprise</option>
+                      <option value="colocation">colocation</option>
+                    </select>
+                  </Field>
+                </div>
+
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={proposal.has_onsite_generation}
+                      onChange={(e) => setProposal((p) => ({ ...p, has_onsite_generation: e.target.checked }))}
+                    />
+                    On-site power generation
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={proposal.renewable_ppa}
+                      onChange={(e) => setProposal((p) => ({ ...p, renewable_ppa: e.target.checked }))}
+                    />
+                    Renewable power contract (PPA)
+                  </label>
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
+                  Most sensitive inputs: <strong>IT load</strong>, <strong>PUE</strong>, and <strong>WUE</strong>.
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <ShinyButton type="submit" className="bg-emerald-600 text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={loading}>
+                    {loading ? "Running assessment..." : "Run assessment"}
+                  </ShinyButton>
+                  {assessment && <span className="text-xs text-slate-500">Assessment ready. Move to the next step.</span>}
+                </div>
+              </form>
+
+              <ProgressPanel progress={progress} error={error} />
+            </section>
+          )}
+
+          {currentStep === 2 && (
+            <section>
+              <SectionTitle title="2. Location" subtitle="See where the site sits and nearby risk context." />
+              {!assessment ? (
+                <EmptyState text="Run the assessment first, then return here to review the map." />
+              ) : (
+                <>
+                  <div className="map-shell mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                    <LocationContextMap
+                      lat={assessment.location.lat}
+                      lng={assessment.location.lng}
+                      apiKey={MAPTILER_KEY}
+                      noiseRadiusM={assessment.sociological.estimated_noise_radius_m}
+                    />
                   </div>
-                </div>
-              </div>
-            )}
-          </Card>
-        </section>
+                  <p className="mt-3 text-sm text-slate-700">
+                    {assessment.location.municipality}, {assessment.location.province} | lat {assessment.location.lat.toFixed(4)}, lng {assessment.location.lng.toFixed(4)}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <RiskChip label="Grid status" value={assessment.environmental.grid_score} />
+                    <RiskChip label="Water share" value={`${assessment.environmental.pct_of_municipal_daily_supply.toFixed(2)}%`} />
+                    <RiskChip label="AQHI" value={assessment.sociological.air_quality_baseline} />
+                    <RiskChip
+                      label="Noise radius"
+                      value={
+                        typeof assessment.sociological.estimated_noise_radius_m === "number"
+                          ? `${assessment.sociological.estimated_noise_radius_m.toFixed(0)} m`
+                          : "unavailable"
+                      }
+                    />
+                  </div>
+                  <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <summary className="cursor-pointer font-medium text-slate-900">Details and source status</summary>
+                    <p className="mt-2 text-xs text-slate-500">Data freshness is shown exactly as returned by each source.</p>
+                    <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white">
+                      <table className="w-full border-collapse text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2">Source</th>
+                            <th className="px-3 py-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(assessment.data_freshness).map(([k, v]) => (
+                            <tr key={k} className="border-t border-slate-100">
+                              <td className="px-3 py-2 font-medium text-slate-700">{k}</td>
+                              <td className="px-3 py-2 text-slate-600">{String(v)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                </>
+              )}
+            </section>
+          )}
+
+          {currentStep === 3 && (
+            <section>
+              <SectionTitle title="3. Impacts" subtitle="Plain-language impact summary for this proposal." />
+              {!assessment ? (
+                <EmptyState text="Run the assessment first to view impact results." />
+              ) : (
+                <>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <ImpactCard
+                      title="Environmental"
+                      text={`Estimated annual emissions are ${assessment.environmental.annual_carbon_tonnes.toLocaleString()} tCO2e, with ${assessment.environmental.total_water_litres_per_day.toLocaleString()} L/day water demand.`}
+                    />
+                    <ImpactCard
+                      title="Economic"
+                      text={`Estimated 10-year net fiscal effect is $${assessment.economic.net_fiscal_impact_10yr_cad.toLocaleString()} and ${assessment.economic.direct_permanent_jobs} direct permanent jobs.`}
+                    />
+                    <ImpactCard
+                      title="Grid"
+                      text={`Grid model predicts ${toPct(assessment.grid_strain.strain_probability)} strain probability (${assessment.grid_strain.predicted_strain_level}).`}
+                    />
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <p className="font-semibold text-slate-900">Composite signal</p>
+                    <p className="mt-1">{assessment.overall_score.summary_sentence}</p>
+                  </div>
+
+                  <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <summary className="cursor-pointer font-medium text-slate-900">How these numbers were calculated</summary>
+                    <div className="mt-2 space-y-1 text-xs">
+                      <p>Carbon formula: {evidenceText(assessment, "environmental", "carbon_formula")}</p>
+                      <p>Water formula: {evidenceText(assessment, "environmental", "water_formula")}</p>
+                      <p>Grid formula: {evidenceText(assessment, "environmental", "grid_formula")}</p>
+                      <p>Jobs formula: {evidenceText(assessment, "economic", "jobs_formula")}</p>
+                      <p>Fiscal formula: {evidenceText(assessment, "economic", "fiscal_formula")}</p>
+                    </div>
+                  </details>
+                </>
+              )}
+            </section>
+          )}
+
+          {currentStep === 4 && (
+            <section>
+              <SectionTitle title="4. Decision" subtitle="Action guidance for both residents and councillors." />
+              {!assessment ? (
+                <EmptyState text="Run the assessment first to generate recommendations." />
+              ) : (
+                <>
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <p className="font-semibold text-slate-900">Shared outcome</p>
+                    <p className="mt-1">{assessment.overall_score.summary_sentence}</p>
+                    <p className="mt-1">Recommendation: <strong>{assessment.policy_decision?.recommendation?.replaceAll("_", " ") ?? "not available"}</strong></p>
+                  </div>
+
+                  <div className="mt-4 flex gap-2">
+                    <Button
+                      type="button"
+                      variant={persona === "citizen" ? "default" : "outline"}
+                      onClick={() => setPersona("citizen")}
+                      className="h-9"
+                    >
+                      <UserRound className="size-4" />
+                      Citizen
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={persona === "councillor" ? "default" : "outline"}
+                      onClick={() => setPersona("councillor")}
+                      className="h-9"
+                    >
+                      <Landmark className="size-4" />
+                      Councillor
+                    </Button>
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {persona === "citizen" ? "If you are a citizen, here is what you can do:" : "If you are a councillor, here is what you can do:"}
+                    </p>
+                    <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+                      {(persona === "citizen" ? citizenActions(assessment) : councillorActions(assessment)).map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <summary className="cursor-pointer font-medium text-slate-900">Memo and evidence details</summary>
+                    <div className="mt-2 space-y-2">
+                      <p className="text-xs text-slate-600 whitespace-pre-line">{assessment.memo?.recommendation_section ?? assessment.report_narrative}</p>
+                      <div className="rounded-lg border border-slate-200 bg-white p-2">
+                        <p className="text-xs font-semibold text-slate-700">Negotiation playbook</p>
+                        <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                          {assessment.negotiation_playbook.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </details>
+                </>
+              )}
+            </section>
+          )}
+        </BlurFade>
+
+        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/90 p-3">
+          <Button type="button" variant="outline" onClick={() => setCurrentStep((s) => Math.max(1, s - 1))} disabled={currentStep === 1}>
+            <ArrowLeft className="size-4" />
+            Back
+          </Button>
+          <span className="text-xs font-medium text-slate-500">Step {currentStep} of 4</span>
+          <Button
+            type="button"
+            onClick={() => setCurrentStep((s) => Math.min(4, s + 1))}
+            disabled={!canGoNext || currentStep === 4}
+          >
+            Next
+            <ArrowRight className="size-4" />
+          </Button>
+        </div>
       </div>
     </main>
   );
 }
 
-function toPct(value: number) {
-  return `${(value * 100).toFixed(1)}%`;
+function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div>
+      <p className="text-lg font-semibold text-slate-900">{title}</p>
+      <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
+    </div>
+  );
 }
 
-function Stepper({ activeStep }: { activeStep: number }) {
-  const steps = ["Proposal Intake", "Location Context", "Impact Results", "Decision Brief"];
+function StepHeader({ currentStep, onStepClick }: { currentStep: number; onStepClick: (step: number) => void }) {
   return (
-    <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white/80 p-3 sm:grid-cols-4">
-      {steps.map((label, idx) => {
-        const num = idx + 1;
-        const active = num === activeStep;
-        const complete = num < activeStep;
+    <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white/85 p-2 sm:grid-cols-4">
+      {STEPS.map((label, idx) => {
+        const step = idx + 1;
+        const stateClass =
+          step === currentStep
+            ? "bg-emerald-700 text-white"
+            : step < currentStep
+              ? "bg-emerald-100 text-emerald-900"
+              : "bg-slate-100 text-slate-500";
         return (
-          <div
+          <button
+            type="button"
             key={label}
-            className={`rounded-xl px-3 py-2 text-xs font-medium ${
-              active ? "bg-emerald-700 text-white" : complete ? "bg-emerald-100 text-emerald-900" : "bg-slate-100 text-slate-500"
-            }`}
+            className={`rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${stateClass}`}
+            onClick={() => onStepClick(step)}
           >
-            {num}. {label}
-          </div>
+            {step}. {label}
+          </button>
         );
       })}
     </div>
   );
 }
 
-function LocationMap({ assessment }: { assessment: ImpactAssessment | null }) {
-  if (!assessment) {
-    return <div className="map-shell flex items-center justify-center text-sm text-slate-500">Map preview appears after assessment.</div>;
-  }
-
-  const { lng, lat } = assessment.location;
-  const noiseRadiusM = assessment.sociological.estimated_noise_radius_m;
+function ProgressPanel({ progress, error }: { progress: StreamEvent | null; error: string | null }) {
+  if (!progress && !error) return null;
 
   return (
-    <div className="map-shell overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-      <LocationContextMap lat={lat} lng={lng} apiKey={MAPTILER_KEY} noiseRadiusM={noiseRadiusM} />
-      <div className="border-t border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700">
-        {assessment.location.municipality}, {assessment.location.province} | lat {lat.toFixed(4)}, lng {lng.toFixed(4)}
-      </div>
+    <div className="mt-4 space-y-3">
+      {progress && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-slate-900">Progress: {progress.stage}</span>
+            <span className="text-slate-600">{progress.pct}%</span>
+          </div>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${progress.pct}%` }} />
+          </div>
+        </div>
+      )}
+      {error && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+    </div>
+  );
+}
+
+function ImpactCard({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <p className="text-sm font-semibold text-slate-900">{title}</p>
+      <p className="mt-1 text-sm text-slate-700">{text}</p>
+    </div>
+  );
+}
+
+function RiskChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+      <span className="text-slate-500">{label}</span>
+      <span>{value}</span>
+    </span>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-600">
+      {text}
     </div>
   );
 }
@@ -372,30 +521,57 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Card({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm md:p-6">
-      <p className="text-lg font-semibold text-slate-900">{title}</p>
-      <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
-      <div className="mt-4">{children}</div>
-    </section>
-  );
+function toPct(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
 }
 
-function RiskChip({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
-      <span className="text-slate-500">{label}</span>
-      <span>{value}</span>
-    </span>
-  );
+function evidenceText(
+  assessment: ImpactAssessment,
+  section: "environmental" | "economic" | "sociological" | "grid_strain",
+  key: string,
+) {
+  const sectionRecord = assessment.evidence_pack?.[section];
+  if (!sectionRecord || typeof sectionRecord !== "object") return "unavailable";
+  const value = (sectionRecord as Record<string, unknown>)[key];
+  return value == null ? "unavailable" : String(value);
 }
 
-function NarrativeBlock({ title, sentence }: { title: string; sentence: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <p className="font-semibold text-slate-900">{title}</p>
-      <p className="mt-1 text-slate-700">{sentence}</p>
-    </div>
-  );
+function citizenActions(assessment: ImpactAssessment): string[] {
+  const actions: string[] = [];
+  const rec = assessment.policy_decision?.recommendation ?? "";
+
+  if (assessment.environmental.water_score === "red" || assessment.environmental.pct_of_municipal_daily_supply >= 10) {
+    actions.push("Ask for a public monthly water-use report and a clear water replenishment plan.");
+  }
+  if (assessment.grid_strain.strain_probability >= 0.25) {
+    actions.push("Ask how household power rates could change and what protections are planned.");
+  } else {
+    actions.push("Ask council to publish yearly grid and utility-rate impact updates.");
+  }
+  if (rec === "defer" || rec === "reject") {
+    actions.push("Support a pause until independent technical review results are published.");
+  } else {
+    actions.push("Request public progress checkpoints tied to water, jobs, and noise commitments.");
+  }
+
+  return actions;
+}
+
+function councillorActions(assessment: ImpactAssessment): string[] {
+  const actions: string[] = [];
+
+  for (const item of assessment.negotiation_playbook.slice(0, 3)) {
+    actions.push(item);
+  }
+
+  if (assessment.environmental.water_score === "red") {
+    actions.push("Make incentives conditional on audited water caps and enforceable clawbacks.");
+  }
+
+  const unavailableSources = Object.values(assessment.data_freshness).filter((v) => String(v).startsWith("unavailable:")).length;
+  if (unavailableSources > 0) {
+    actions.push("Record data gaps in the motion and require refreshed evidence before final approval.");
+  }
+
+  return actions.slice(0, 4);
 }
