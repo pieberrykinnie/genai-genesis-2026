@@ -4,6 +4,8 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
+  --font-geist-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-geist-mono: "Cascadia Mono", "Consolas", "Courier New", monospace;
   --background: #f2f6ef;
   --foreground: #111827;
   --panel: #ffffff;
