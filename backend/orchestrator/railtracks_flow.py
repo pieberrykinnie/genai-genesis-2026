@@ -22,6 +22,7 @@ from data_sources import (
     get_annual_mean_temp,
     fetch_site_fit_datacenter_context,
 )
+from llm.providers import check_bitnet_health
 from ml.grid_strain.predict import predict_grid_strain
 from ml.site_fit.predict import predict_site_fit
 from models import (
@@ -207,7 +208,12 @@ async def _write_memo(
         api_key = (settings.groq_api_key or "").strip()
         llm_ready = bool(api_key) and not api_key.startswith("test-")
     elif llm_backend == "bitnet":
-        llm_ready = bool(settings.bitnet_api_base.strip()) and bool(settings.bitnet_model.strip())
+        bitnet_configured = bool(settings.bitnet_api_base.strip()) and bool(settings.bitnet_model.strip())
+        if bitnet_configured:
+            health = await check_bitnet_health(settings)
+            llm_ready = bool(health.get("reachable", False))
+        else:
+            llm_ready = False
     else:
         llm_ready = False
 

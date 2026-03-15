@@ -28,6 +28,9 @@ MODEL_PATH=./models/grid_strain_model.pkl
 ```
 
 `LLM_BACKEND` currently supports `groq` and `bitnet`. Keep the BitNet server bound to localhost and point `BITNET_API_BASE` at its OpenAI-compatible `/v1` base URL.
+Use `GET /health/llm` to check backend configuration and BitNet reachability.
+
+BitNet llama.cpp servers typically support `response_format={"type":"json_object"}` but not `json_schema`; memo fallback coercion in validators remains the safety net.
 
 Geocoding order is:
 
@@ -38,6 +41,7 @@ Geocoding order is:
 ## Endpoints
 
 - `GET /health`
+- `GET /health/llm`
 - `POST /api/assess`
 - `POST /api/assess/stream` (SSE)
 
@@ -50,6 +54,8 @@ Geocoding order is:
 - `uv run python scripts/train_grid_model.py --data-dir ./data --model-out ./models/grid_strain_model.pkl --allow-synthetic` (explicit opt-in only)
 - `uv run python scripts/evaluate_railtracks_workflow.py --skip-judge`
 - `uv run python scripts/evaluate_railtracks_workflow.py` (requires Groq key for JudgeEvaluator)
+- `uv run python scripts/probe_bitnet_server.py`
+- `uv run python scripts/probe_bitnet_server.py --base-url http://127.0.0.1:8080/v1 --model HF1BitLLM/Llama3-8B-1.58-100B-tokens`
 
 ## Railtracks Viz (Windows)
 

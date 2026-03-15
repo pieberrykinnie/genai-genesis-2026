@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from config import get_settings
 from data_sources import GeocodingUnavailableError
+from llm.providers import check_bitnet_health
 from orchestrator.railtracks_flow import assess_flow
 
 settings = get_settings()
@@ -25,6 +27,53 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "env": settings.app_env}
+
+
+@app.get("/health/llm")
+async def health_llm() -> dict[str, Any]:
+    backend = settings.llm_backend.strip().lower()
+
+    if backend == "bitnet":
+        configured = bool(settings.bitnet_api_base.strip()) and bool(settings.bitnet_model.strip())
+        if not configured:
+            return {
+                "backend": "bitnet",
+                "configured": False,
+                "reachable": False,
+                "models": [],
+                "structured_output_note": "json_object only (not json_schema)",
+                "error": "bitnet_backend_not_configured",
+            }
+
+        health_result = await check_bitnet_health(settings)
+        return {
+            "backend": "bitnet",
+            "configured": True,
+            "reachable": bool(health_result.get("reachable", False)),
+            "models": list(health_result.get("models", [])),
+            "structured_output_note": "json_object only (not json_schema)",
+            "error": health_result.get("error"),
+        }
+
+    if backend == "groq":
+        api_key = (settings.groq_api_key or "").strip()
+        return {
+            "backend": "groq",
+            "configured": bool(api_key),
+            "reachable": None,
+            "models": [settings.groq_model] if settings.groq_model.strip() else [],
+            "structured_output_note": "json_schema expected",
+            "error": None,
+        }
+
+    return {
+        "backend": backend or "unknown",
+        "configured": False,
+        "reachable": False,
+        "models": [],
+        "structured_output_note": "unknown",
+        "error": "unsupported_llm_backend",
+    }
 
 
 @app.post("/api/assess")

@@ -1,4 +1,5 @@
 import os
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -31,6 +32,36 @@ def test_health() -> None:
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+
+def test_health_llm_bitnet_reachable() -> None:
+    with patch("main.settings.llm_backend", "bitnet"), patch(
+        "main.check_bitnet_health",
+        new=AsyncMock(return_value={"reachable": True, "models": ["HF1BitLLM/Llama3-8B-1.58-100B-tokens"], "error": None}),
+    ):
+        r = client.get("/health/llm")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["backend"] == "bitnet"
+    assert body["configured"] is True
+    assert body["reachable"] is True
+    assert body["models"]
+    assert "structured_output_note" in body
+
+
+def test_health_llm_bitnet_unreachable() -> None:
+    with patch("main.settings.llm_backend", "bitnet"), patch(
+        "main.check_bitnet_health",
+        new=AsyncMock(return_value={"reachable": False, "models": [], "error": "connection refused"}),
+    ):
+        r = client.get("/health/llm")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["backend"] == "bitnet"
+    assert body["reachable"] is False
+    assert body["error"] == "connection refused"
 
 
 def test_assess_contract() -> None:
