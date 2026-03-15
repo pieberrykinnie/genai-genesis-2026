@@ -986,7 +986,7 @@ export default function Home() {
               <section className="animate-fade-in">
                 <SectionHeader
                   title="Decision Brief"
-                  subtitle="Policy recommendation, action items, and AI-generated council memo."
+                  subtitle="Policy recommendation and persona memo from assessment evidence."
                 />
                 {!assessment ? (
                   <EmptyState text="Run the assessment first to view the decision brief." />
@@ -1017,12 +1017,8 @@ export default function Home() {
                       </Button>
                     </div>
 
-                    {/* Action phase cards */}
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <ActionPhaseCard title="Immediate actions" icon={<Zap className="size-4" />} items={phaseActions(assessment, persona).now} />
-                      <ActionPhaseCard title="Before permit" icon={<Clock className="size-4" />} items={phaseActions(assessment, persona).beforePermit} />
-                      <ActionPhaseCard title="Post-approval" icon={<ShieldCheck className="size-4" />} items={phaseActions(assessment, persona).postApproval} />
-                    </div>
+                    {/* Persona memo */}
+                    <PersonaMemoCard assessment={assessment} persona={persona} />
 
                   </div>
                 )}
@@ -1296,11 +1292,14 @@ function MemoStatusCard({ memoState, memoError }: { memoState: MemoState; memoEr
   );
 }
 
-function ActionPhaseCard({ title, icon, items }: { title: string; icon: React.ReactNode; items: string[] }) {
+function PersonaMemoCard({ assessment, persona }: { assessment: ImpactAssessment; persona: Persona }) {
+  const items = personaMemoLines(assessment, persona);
+  const title = persona === "citizen" ? "Citizen memo" : "Councillor memo";
+
   return (
     <div className="glass rounded-xl p-4">
       <div className="flex items-center gap-2">
-        {icon}
+        {persona === "citizen" ? <UserRound className="size-4" /> : <Landmark className="size-4" />}
         <h3 className="text-sm font-bold text-slate-700">{title}</h3>
       </div>
       <ul className="mt-3 space-y-2 pl-1">
@@ -1386,38 +1385,97 @@ function plainLanguageSummary(a: ImpactAssessment): string {
   return `Current recommendation: ${rec}. This project is assessed as ${a.overall_score.composite_rag} risk overall, with the biggest sensitivities around water use, grid pressure, and operating efficiency assumptions.`;
 }
 
-function phaseActions(a: ImpactAssessment, persona: Persona) {
-  if (persona === "citizen") {
-    return {
-      now: [
-        "Ask for a plain-language summary of water, grid, and noise commitments.",
-        "Request that key assumptions (IT load, PUE, WUE) are published for public review.",
-      ],
-      beforePermit: [
-        "Ask council to require an independent technical review before final permits.",
-        "Push for clear community notification and complaint channels.",
-      ],
-      postApproval: [
-        "Track annual public reporting on water, jobs, and utility pressure.",
-        "Report repeated noise or service issues through published oversight channels.",
-      ],
-    };
+function personaMemoLines(a: ImpactAssessment, persona: Persona): string[] {
+  const memo = a.memo;
+  if (!memo) {
+    return ["Memo is not available yet. Please wait for generation to complete."];
   }
-  const permitActions = [...a.negotiation_playbook].slice(0, 2);
-  while (permitActions.length < 2) {
-    permitActions.push("Tie approval milestones to audited environmental and infrastructure commitments.");
+
+  const recommendation = String(memo.recommendation_section || "").trim();
+  const fromSection = extractPersonaRecommendationSection(recommendation, persona);
+  const parsed = splitMemoTextToLines(fromSection);
+  if (parsed.length > 0) {
+    return parsed;
   }
-  return {
-    now: [
-      "Record critical assumptions in the motion and require independent validation.",
-      "Align utility coordination milestones before permit issuance.",
-    ],
-    beforePermit: permitActions,
-    postApproval: [
-      "Require annual compliance reporting on water, grid, tax, and jobs outcomes.",
-      "Include enforcement triggers for missed commitments.",
-    ],
-  };
+
+  const fallbackFields =
+    persona === "citizen"
+      ? [memo.executive_summary, memo.environmental_section, memo.sociological_section]
+      : [memo.executive_summary, memo.economic_section, memo.recommendation_section];
+
+  const fallback = fallbackFields
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  return fallback.length > 0
+    ? fallback
+    : ["Memo content is unavailable for this persona."];
+}
+
+function extractPersonaRecommendationSection(section: string, persona: Persona): string {
+  if (!section) return "";
+
+  const normalized = section
+    .replace(/\\n/g, "\n")
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'");
+
+  const citizenMarker = /for\s+citizens?\+?\s*:/gi;
+  const councillorMarker = /for\s+councillors?\+?\s*:/gi;
+  const marker = persona === "citizen" ? citizenMarker : councillorMarker;
+  const otherMarker = persona === "citizen" ? councillorMarker : citizenMarker;
+
+  const hit = marker.exec(normalized);
+  if (hit) {
+    const start = hit.index + hit[0].length;
+    const rest = normalized.slice(start);
+    const otherHit = otherMarker.exec(rest);
+    const end = otherHit ? start + otherHit.index : normalized.length;
+
+    const extracted = normalized
+      .slice(start, end)
+      .replace(/^[\s'"`[{(,:;-]+/, "")
+      .replace(/[\s'"`}\]),;]+$/, "")
+      .trim();
+
+    if (extracted) {
+      return extracted;
+    }
+  }
+
+  return normalized.trim();
+}
+
+function splitMemoTextToLines(text: string): string[] {
+  const cleaned = String(text || "").trim();
+  if (!cleaned) return [];
+
+  const normalizeMemoLine = (line: string) =>
+    line
+      .replace(/^[-•*\s]+/, "")
+      .replace(/^[\s'"`[{(,:;-]+/, "")
+      .replace(/[\s'"`}\]),;]+$/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const byNewline = cleaned
+    .split(/\n+/)
+    .map(normalizeMemoLine)
+    .filter(Boolean)
+    .filter((line) => !/^for\s+(citizens|councillors)\s*:/i.test(line));
+
+  if (byNewline.length >= 2) {
+    return byNewline.slice(0, 4);
+  }
+
+  const bySentence = cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map(normalizeMemoLine)
+    .filter((line) => line.length > 10)
+    .filter((line) => !/^for\s+(citizens|councillors)\s*:/i.test(line));
+
+  return bySentence.slice(0, 4);
 }
 
 function memoStateLabel(state: MemoState) {
