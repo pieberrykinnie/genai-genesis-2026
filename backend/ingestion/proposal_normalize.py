@@ -1,7 +1,7 @@
 import railtracks as rt
 from models import ProposalInput
 
-from backend.orchestrator.agents import get_proposal_extraction_agent
+from orchestrator.agents import get_proposal_extraction_agent
 
 async def ingest_or_extract(payload: dict) -> ProposalInput:
     '''

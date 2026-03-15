@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import tempfile
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -8,6 +10,8 @@ from fastapi.responses import StreamingResponse
 
 from config import get_settings
 from data_sources import GeocodingUnavailableError
+from ingestion.pdf_extract import extract_text_from_pdf
+from ingestion.proposal_normalize import ingest_or_extract
 from llm.providers import check_bitnet_health
 from orchestrator.memo_jobs import MemoJobManager, QueueFullError
 from orchestrator.railtracks_flow import assess_flow
@@ -175,6 +179,42 @@ async def api_assess_stream(payload: dict):
 
 @app.post("/api/extract-proposal")
 async def api_extract_proposal(file: UploadFile = File(...)):
-    # Placeholder: save file, extract text via backend.ingestion.pdf_extract 
-    # and pass to ProposalExtractionAgent
-    return {"status": "not_implemented"}
+    raw_bytes = await file.read()
+
+    tmp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(raw_bytes)
+            tmp_path = tmp.name
+        text = extract_text_from_pdf(tmp_path)
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+
+    # Verify LLM is available before attempting extraction
+    current_settings = get_settings()
+    llm_backend = current_settings.llm_backend.strip().lower()
+    if llm_backend == "groq":
+        api_key = (current_settings.groq_api_key or "").strip()
+        llm_ready = bool(api_key) and not api_key.startswith("test-")
+    elif llm_backend == "bitnet":
+        bitnet_configured = (
+            bool(current_settings.bitnet_api_base.strip())
+            and bool(current_settings.bitnet_model.strip())
+        )
+        if bitnet_configured:
+            health = await check_bitnet_health(current_settings)
+            llm_ready = bool(health.get("reachable", False))
+        else:
+            llm_ready = False
+    else:
+        llm_ready = False
+
+    if not llm_ready:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "llm_unavailable", "message": "LLM backend is not configured or reachable."},
+        )
+
+    proposal = await ingest_or_extract({"raw_text": text})
+    return proposal.model_dump(mode="json")

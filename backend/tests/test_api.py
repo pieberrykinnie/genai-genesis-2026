@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from collections.abc import Iterator
@@ -184,3 +185,53 @@ def test_memo_job_not_found(client: TestClient) -> None:
     result = client.get("/api/memo-jobs/memo-job-missing/result")
     assert result.status_code == 404
     assert result.json()["detail"]["error"] == "memo_job_not_found"
+
+
+def test_write_memo_bitnet_path(client: TestClient) -> None:
+    """Exercises _write_memo → _BitNetCompatibleProvider (json_object mode) → rt.call → coerce_council_memo."""
+    from config import get_settings
+    from orchestrator.agents import clear_agent_cache
+
+    settings = get_settings()
+
+    valid_memo_json = json.dumps(
+        {
+            "executive_summary": "BitNet test summary for 100 MW data centre in Alberta.",
+            "environmental_section": "Estimated annual carbon: 50000 tCO2e.",
+            "economic_section": "CAD 2000 M CAPEX; 800 permanent jobs; 36 month construction.",
+            "sociological_section": "Estimated noise radius: 250 m. Affects approx 120 residents.",
+            "recommendation_section": "APPROVE",
+            "clause_narratives": ["Grid capacity verified via AESO surplus margins."],
+            "disclaimer": "Preliminary impact analysis. Subject to regulatory review.",
+        }
+    )
+    valid_verifier_json = json.dumps({"passed": True, "issues": []})
+
+    call_mock = AsyncMock(side_effect=[valid_memo_json, valid_verifier_json])
+
+    with (
+        patch.object(settings, "llm_backend", "bitnet"),
+        patch.object(settings, "bitnet_api_base", "http://127.0.0.1:8080/v1"),
+        patch.object(settings, "bitnet_model", "HF1BitLLM/Llama3-8B-1.58-100B-tokens"),
+        patch(
+            "orchestrator.railtracks_flow.check_bitnet_health",
+            new=AsyncMock(
+                return_value={
+                    "reachable": True,
+                    "models": ["HF1BitLLM/Llama3-8B-1.58-100B-tokens"],
+                    "error": None,
+                }
+            ),
+        ),
+        patch("orchestrator.validators.validate_memo_grounding", return_value=(True, [])),
+        patch("railtracks.call", call_mock),
+    ):
+        clear_agent_cache()
+        r = client.post("/api/assess", json=_sample_payload())
+
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["methodology"]["railtacks_used"] is True
+    assert payload["methodology"]["railtacks_verification_passed"] is True
+    assert payload["memo"]["executive_summary"] == "BitNet test summary for 100 MW data centre in Alberta."
+    assert call_mock.call_count == 2, f"Expected 2 rt.call invocations (memo writer + verifier), got {call_mock.call_count}"
