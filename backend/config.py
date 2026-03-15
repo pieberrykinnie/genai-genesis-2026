@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "DataSite Impact Analyzer API"
+    app_name: str = "ClearSite API"
     app_env: str = "dev"
 
     backend_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"

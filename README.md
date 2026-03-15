@@ -5,7 +5,7 @@ Translating complex data center impacts into transparent, sustainable community 
 Built with Railtracks.
 
 ## What this project is
-DataSite helps councils and residents understand the trade-offs of proposed data centres before approval.
+ClearSite helps councils and residents understand the trade-offs of proposed data centres before approval.
 
 For a proposal, it returns:
 - Environmental impact: carbon, water demand, grid pressure
@@ -16,7 +16,7 @@ For a proposal, it returns:
 - Grounded memo and negotiation playbook
 
 ## Why it matters
-Municipal decisions on large data centres can lock in infrastructure pressure for years. DataSite turns complex technical assumptions into transparent, auditable outputs that non-technical stakeholders can understand.
+Municipal decisions on large data centres can lock in infrastructure pressure for years. ClearSite turns complex technical assumptions into transparent, auditable outputs that non-technical stakeholders can understand.
 
 ## Product flow
 1. Proposal Intake (manual form or PDF extraction)

@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project Overview
-DataSite Impact Analyzer estimates environmental, economic, grid, and sociological impacts of a proposed Canadian data centre. It combines deterministic formulas, ON/AB ML grid-strain prediction, and optional LLM report generation.
+ClearSite estimates environmental, economic, grid, and sociological impacts of a proposed Canadian data centre. It combines deterministic formulas, ON/AB ML grid-strain prediction, and optional LLM report generation.
 
 ## Required Proposal Inputs
 Minimum structured inputs (from form/API):
