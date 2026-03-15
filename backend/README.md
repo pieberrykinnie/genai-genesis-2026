@@ -35,8 +35,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Prepare Llama3-8B-1.58 artifacts
-python setup_env.py --hf-repo HF1BitLLM/Llama3-8B-1.58-100B-tokens --quant-type i2_s
+# Prepare a low-RAM bring-up model first (0.7B)
+python setup_env.py --hf-repo 1bitLLM/bitnet_b1_58-large --quant-type i2_s
+
+# Optional on larger hosts: prepare the 8B model instead
+# python setup_env.py --hf-repo HF1BitLLM/Llama3-8B-1.58-100B-tokens --quant-type i2_s
 ```
 
 After setup completes, locate the generated GGUF model under `models/`.
@@ -48,7 +51,7 @@ Use helper wrapper from this backend repo:
 
 ```bash
 BITNET_HOME=../BitNet \
-BITNET_MODEL_PATH=../BitNet/models/HF1BitLLM-Llama3-8B-1.58-100B-tokens/ggml-model-i2_s.gguf \
+BITNET_MODEL_PATH=../BitNet/models/bitnet_b1_58-large/ggml-model-i2_s.gguf \
 ./scripts/start_bitnet_server.sh
 ```
 
@@ -65,7 +68,7 @@ Set `.env` values:
 ```bash
 LLM_BACKEND=bitnet
 BITNET_API_BASE=http://127.0.0.1:8080/v1
-BITNET_MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens
+BITNET_MODEL=1bitLLM/bitnet_b1_58-large
 BITNET_API_KEY=bitnet-local
 ```
 
@@ -87,7 +90,7 @@ curl -s http://127.0.0.1:8000/health/llm | jq .
 # Capability probe from this repository
 uv run python scripts/probe_bitnet_server.py \
 	--base-url http://127.0.0.1:8080/v1 \
-	--model HF1BitLLM/Llama3-8B-1.58-100B-tokens
+	--model 1bitLLM/bitnet_b1_58-large
 ```
 
 Expected:
@@ -96,6 +99,9 @@ Expected:
 - `json_object_ok=True`
 
 `json_schema` may fail on local llama.cpp-style servers; this is expected in current flow.
+
+`huggingface-cli` does not need to be installed in the backend `uv` environment.
+Install it in the BitNet runtime environment (or via `pipx`) since it is only needed for model download/setup.
 
 ## Environment Variables
 
@@ -111,7 +117,7 @@ LLM_TEMPERATURE=
 LLM_PROVIDER=groq
 BITNET_API_KEY=bitnet-local
 BITNET_API_BASE=http://127.0.0.1:8080/v1
-BITNET_MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens
+BITNET_MODEL=1bitLLM/bitnet_b1_58-large
 STRICT_DATA_MODE=true
 STATCAN_CACHE_DIR=./data/statcan_cache
 MODEL_PATH=./models/grid_strain_model.pkl
@@ -145,7 +151,7 @@ Geocoding order is:
 - `uv run python scripts/evaluate_railtracks_workflow.py --skip-judge`
 - `uv run python scripts/evaluate_railtracks_workflow.py` (requires Groq key for JudgeEvaluator)
 - `uv run python scripts/probe_bitnet_server.py`
-- `uv run python scripts/probe_bitnet_server.py --base-url http://127.0.0.1:8080/v1 --model HF1BitLLM/Llama3-8B-1.58-100B-tokens`
+- `uv run python scripts/probe_bitnet_server.py --base-url http://127.0.0.1:8080/v1 --model 1bitLLM/bitnet_b1_58-large`
 
 ## Railtracks Viz (Windows)
 

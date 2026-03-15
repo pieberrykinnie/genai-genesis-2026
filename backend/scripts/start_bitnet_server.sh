@@ -64,7 +64,7 @@ echo "  ctx:  $CTX_SIZE"
 echo "  threads: $THREADS"
 
 # BitNet's script wraps llama.cpp server and expects the build output in build/bin.
-exec python run_inference_server.py \
+exec python3 run_inference_server.py \
   --model "$BITNET_MODEL_PATH" \
   --host "$HOST" \
   --port "$PORT" \
