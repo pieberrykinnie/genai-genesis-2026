@@ -96,3 +96,34 @@ def get_memo_grounding_verifier_agent():
             ),
         )
     return _AGENT_CACHE[key]
+
+
+class ImpactSummaryInput(BaseModel):
+    proposal: ProposalInput
+    evidence_pack: dict
+    policy_decision: PolicyDecision
+
+
+class ImpactSummaryOutput(BaseModel):
+    resident_bullets: list[str]
+    council_bullets: list[str]
+
+
+def get_impact_summary_agent():
+    key = _agent_cache_key("impact_summary")
+    if key not in _AGENT_CACHE:
+        _AGENT_CACHE[key] = rt.agent_node(
+            name="ImpactSummaryAgent",
+            llm=make_railtracks_llm(),
+            system_message=(
+                "You are a plain-language impact communicator for Canadian municipal planning. "
+                "Given an impact assessment evidence pack and policy decision, produce two short bullet-point lists. "
+                "resident_bullets: 3 plain-English bullets for residents — focus on water, grid pressure, and noise/community. "
+                "council_bullets: 3 plain-English bullets for councillors — focus on policy recommendation, fiscal estimate, and key permit conditions. "
+                "Ground every claim in the provided evidence; do not invent numbers. "
+                "Use concrete numbers from the evidence (e.g. exact tonnes, dollars, percentages). "
+                "Each bullet must be a complete sentence. "
+                "Return ONLY a JSON object with keys: resident_bullets (array of 3 strings), council_bullets (array of 3 strings)."
+            ),
+        )
+    return _AGENT_CACHE[key]

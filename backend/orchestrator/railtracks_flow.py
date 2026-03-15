@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
@@ -30,12 +29,12 @@ from llm.providers import check_bitnet_health_cached
 from ml.grid_strain.predict import predict_grid_strain
 from ml.site_fit.predict import predict_site_fit
 from models import (
-    AudienceInsights,
     CouncilMemo,
     EconomicImpact,
     EnvironmentalImpact,
     GridStrainPrediction,
     ImpactAssessment,
+    ImpactSummary,
     Location,
     OverallScore,
     PolicyDecision,
@@ -117,131 +116,6 @@ def _memo_evidence_snapshot(evidence_pack: dict[str, Any]) -> dict[str, Any]:
             "aqhi": public_context.get("aqhi"),
         },
     }
-
-
-def _build_audience_insights(
-    environmental: EnvironmentalImpact,
-    economic: EconomicImpact,
-    sociological: SociologicalImpact,
-    grid_strain: GridStrainPrediction,
-    policy: PolicyDecision,
-) -> AudienceInsights:
-    residents: list[str] = []
-    if environmental.pct_of_municipal_daily_supply >= 5:
-        residents.append("Local water use could become a key concern, especially in dry periods.")
-    else:
-        residents.append("Water-demand pressure appears manageable under current assumptions.")
-
-    if grid_strain.strain_probability >= 0.2:
-        residents.append("There is a meaningful chance of grid pressure, so power-rate questions are valid.")
-    else:
-        residents.append("Grid-pressure risk appears low to moderate in this scenario.")
-
-    residents.append(
-        f"Estimated people in the modeled noise influence area: {sociological.residential_population_in_noise_zone:,}."
-    )
-
-    council: list[str] = [
-        f"Policy recommendation currently trends to: {policy.recommendation.replace('_', ' ')}.",
-        f"Net 10-year fiscal estimate: ${economic.net_fiscal_impact_10yr_cad:,.2f}.",
-    ]
-    if environmental.water_score == "red":
-        council.append("Use enforceable water caps, audit obligations, and clawback clauses before permit approval.")
-    else:
-        council.append("Use annual reporting conditions to keep utility impacts transparent post-approval.")
-
-    return AudienceInsights(residents=residents, council=council)
-
-
-def _extract_bullets(text: str) -> list[str]:
-    if not text or not text.strip():
-        return []
-
-    normalized = text.replace("\\n", "\n").strip()
-
-    # Handle cases where the model returns JSON-like arrays as text.
-    if normalized.startswith("[") and normalized.endswith("]"):
-        try:
-            import json
-
-            parsed = json.loads(normalized.replace("'", '"'))
-            if isinstance(parsed, list):
-                normalized_lines = [str(item) for item in parsed]
-            else:
-                normalized_lines = normalized.splitlines()
-        except Exception:
-            normalized_lines = normalized.splitlines()
-    else:
-        normalized_lines = normalized.splitlines()
-
-    bullets: list[str] = []
-    for raw in normalized_lines:
-        line = raw.strip()
-        if not line:
-            continue
-        if line.lower().startswith("for citizens") or line.lower().startswith("for councillors"):
-            continue
-
-        line = re.sub(r"^[-•*\s]+", "", line)
-        line = re.sub(r"^\d+[\.)\s-]+", "", line)
-        line = re.sub(r"^[\[\]\{\}\"':,\s]+", "", line)
-        line = re.sub(r"[\[\]\{\}\"',;:\s]+$", "", line)
-        line = re.sub(r"\s+", " ", line).strip()
-        if len(line) < 6:
-            continue
-        bullets.append(line)
-
-    # Fallback: split prose into sentence bullets.
-    if not bullets:
-        sentences = re.split(r"(?<=[.!?])\s+|;\s*", normalized)
-        for raw in sentences:
-            line = re.sub(r"^[\[\]\{\}\"':,\s-]+", "", raw.strip())
-            line = re.sub(r"[\[\]\{\}\"',;:\s]+$", "", line)
-            line = re.sub(r"\s+", " ", line).strip()
-            if len(line) >= 12:
-                bullets.append(line)
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for b in bullets:
-        key = b.lower()
-        if key not in seen:
-            seen.add(key)
-            deduped.append(b)
-
-    return deduped[:4]
-
-
-def _audience_insights_from_memo(memo: CouncilMemo) -> AudienceInsights | None:
-    section = memo.recommendation_section or ""
-    if not section.strip():
-        return None
-
-    resident_match = re.search(
-        r"for\s+citizens\s*:\s*(.*?)(?=for\s+councillors\s*:|$)",
-        section,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    council_match = re.search(
-        r"for\s+councillors\s*:\s*(.*)$",
-        section,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-
-    residents = _extract_bullets(resident_match.group(1)) if resident_match else []
-    council = _extract_bullets(council_match.group(1)) if council_match else []
-    if not residents and not council:
-        return None
-    return AudienceInsights(residents=residents, council=council)
-
-
-def _audience_insights_are_rich(insights: AudienceInsights | None) -> bool:
-    if insights is None:
-        return False
-    if len(insights.residents) < 2 or len(insights.council) < 2:
-        return False
-    total_words = sum(len(item.split()) for item in [*insights.residents, *insights.council])
-    return total_words >= 28
 
 
 async def _fetch_public_context(proposal: ProposalInput) -> tuple[dict[str, Any], dict[str, str]]:
@@ -428,20 +302,8 @@ async def _write_memo(
                 "Return JSON only, no markdown and no extra commentary.",
                 "Use only provided evidence and selected clauses.",
                 "In recommendation_section, include the exact recommendation token from policy_decision.recommendation.",
-                "In recommendation_section, use exactly this structure with line breaks:",
-                "Recommendation: <exact recommendation token>",
-                "For citizens:",
-                "- <bullet 1>",
-                "- <bullet 2>",
-                "- <bullet 3>",
-                "For councillors:",
-                "- <bullet 1>",
-                "- <bullet 2>",
-                "- <bullet 3>",
-                "Citizen bullets must be plain-language, concrete, and explain household/community impact (water, grid reliability/rates, noise/jobs).",
-                "Councillor bullets must be policy/action oriented with measurable oversight or permit conditions.",
-                "Each bullet must be 12-28 words, no quotation marks, and no JSON-like list syntax inside recommendation_section.",
-                "Use numbers from evidence where useful, and avoid generic claims.",
+                "In recommendation_section, include two labeled subsections: 'For citizens:' and 'For councillors:'.",
+                "Use plain language suitable for both residents and councillors.",
                 f"Proposal: {proposal_obj.model_dump_json()}",
                 f"Policy decision: {policy_obj.model_dump_json()}",
                 f"Evidence summary: {evidence_obj}",
@@ -513,22 +375,12 @@ async def _write_memo(
                 deterministic_ok, deterministic_errors = validate_memo_grounding(draft, evidence_pack, policy, proposal)
                 should_verify = verifier_mode == "always" or not deterministic_ok
                 if should_verify:
-                    try:
-                        verifier_raw = await _timed_llm_call(
-                            "draft_verify",
-                            memo_grounding_verifier_agent,
-                            _memo_verifier_prompt(proposal, compact_evidence, policy, draft, clause_text),
-                        )
-                        verifier_passed, verifier_issues, verifier_parse_errors = coerce_verifier_result(verifier_raw)
-                    except Exception as exc:
-                        logger.warning("memo_verifier_unavailable_using_draft reason=%s", exc.__class__.__name__)
-                        return {
-                            "memo": draft.model_dump(mode="python"),
-                            "verification_passed": bool(deterministic_ok),
-                            "issues": [*deterministic_errors, f"verifier_unavailable:{exc.__class__.__name__}"],
-                            "llm_call_count": llm_call_count,
-                            "stage_timings_ms": stage_timings_ms,
-                        }
+                    verifier_raw = await _timed_llm_call(
+                        "draft_verify",
+                        memo_grounding_verifier_agent,
+                        _memo_verifier_prompt(proposal, compact_evidence, policy, draft, clause_text),
+                    )
+                    verifier_passed, verifier_issues, verifier_parse_errors = coerce_verifier_result(verifier_raw)
                 else:
                     verifier_passed, verifier_issues, verifier_parse_errors = True, [], []
 
@@ -545,29 +397,17 @@ async def _write_memo(
                 }
 
             evidence_with_errors = {**compact_evidence, "validation_errors": issues}
-            try:
-                repaired_raw = await _timed_llm_call(
-                    "repair_write",
-                    memo_writer_agent,
-                    _memo_writer_prompt(
-                        proposal,
-                        evidence_with_errors,
-                        policy,
-                        clause_text,
-                        validation_errors=issues,
-                    ),
-                )
-            except Exception as exc:
-                if draft is not None:
-                    logger.warning("memo_repair_unavailable_using_draft reason=%s", exc.__class__.__name__)
-                    return {
-                        "memo": draft.model_dump(mode="python"),
-                        "verification_passed": False,
-                        "issues": [*issues, f"repair_unavailable:{exc.__class__.__name__}"],
-                        "llm_call_count": llm_call_count,
-                        "stage_timings_ms": stage_timings_ms,
-                    }
-                raise
+            repaired_raw = await _timed_llm_call(
+                "repair_write",
+                memo_writer_agent,
+                _memo_writer_prompt(
+                    proposal,
+                    evidence_with_errors,
+                    policy,
+                    clause_text,
+                    validation_errors=issues,
+                ),
+            )
             repaired, repaired_parse_errors = coerce_council_memo(repaired_raw)
             if repaired is None:
                 return {
@@ -583,24 +423,14 @@ async def _write_memo(
             repaired_ok, repaired_errors = validate_memo_grounding(repaired, evidence_pack, policy, proposal)
             should_verify_repair = verifier_mode == "always" or not repaired_ok
             if should_verify_repair:
-                try:
-                    repaired_verifier_raw = await _timed_llm_call(
-                        "repair_verify",
-                        memo_grounding_verifier_agent,
-                        _memo_verifier_prompt(proposal, compact_evidence, policy, repaired, clause_text),
-                    )
-                    repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = coerce_verifier_result(
-                        repaired_verifier_raw
-                    )
-                except Exception as exc:
-                    logger.warning("memo_repair_verifier_unavailable_using_repaired reason=%s", exc.__class__.__name__)
-                    return {
-                        "memo": repaired.model_dump(mode="python"),
-                        "verification_passed": bool(repaired_ok),
-                        "issues": [*repaired_errors, f"repair_verifier_unavailable:{exc.__class__.__name__}"],
-                        "llm_call_count": llm_call_count,
-                        "stage_timings_ms": stage_timings_ms,
-                    }
+                repaired_verifier_raw = await _timed_llm_call(
+                    "repair_verify",
+                    memo_grounding_verifier_agent,
+                    _memo_verifier_prompt(proposal, compact_evidence, policy, repaired, clause_text),
+                )
+                repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = coerce_verifier_result(
+                    repaired_verifier_raw
+                )
             else:
                 repaired_verifier_passed, repaired_verifier_issues, repaired_verifier_parse_errors = True, [], []
             repaired_issues = list(repaired_errors)
@@ -630,18 +460,128 @@ async def _write_memo(
         )
         return CouncilMemo(**workflow_result["memo"]), railtracks_meta
     except Exception as exc:
-        detail = str(exc)
-        if "rate_limit_exceeded" in detail.lower() or "rate limit" in detail.lower():
-            railtracks_meta["memo_fallback_reason"] = "workflow_exception:rate_limit_exceeded"
-        elif detail:
-            # Keep reason compact but specific enough for demo diagnostics.
-            compact = detail.replace("\n", " ").strip()[:140]
-            railtracks_meta["memo_fallback_reason"] = f"workflow_exception:{exc.__class__.__name__}:{compact}"
-        else:
-            railtracks_meta["memo_fallback_reason"] = f"workflow_exception:{exc.__class__.__name__}"
+        railtracks_meta["memo_fallback_reason"] = f"workflow_exception:{exc.__class__.__name__}"
         railtracks_meta["memo_elapsed_ms"] = int((time.perf_counter() - memo_started) * 1000)
         logger.exception("memo_workflow_failed reason=%s", railtracks_meta["memo_fallback_reason"])
         return _fallback_memo(proposal, environmental, economic, sociological, policy, overall_score), railtracks_meta
+
+
+def _fallback_impact_summary(assessment: ImpactAssessment) -> ImpactSummary:
+    env = assessment.environmental
+    eco = assessment.economic
+    soc = assessment.sociological
+    grid = assessment.grid_strain
+    policy = assessment.policy_decision
+
+    rec_label = (policy.recommendation.replace("_", " ") if policy else "under review")
+
+    if env.pct_of_municipal_daily_supply >= 5:
+        water_bullet = (
+            f"Local water use could become a key concern: the facility would consume "
+            f"{env.total_water_litres_per_day:,.0f} L/day, equal to "
+            f"{env.pct_of_municipal_daily_supply:.1f}% of modeled municipal supply."
+        )
+    else:
+        water_bullet = (
+            f"Water-demand pressure appears manageable: the facility would use "
+            f"{env.total_water_litres_per_day:,.0f} L/day "
+            f"({env.pct_of_municipal_daily_supply:.1f}% of modeled municipal supply)."
+        )
+
+    if grid.strain_probability >= 0.2:
+        grid_bullet = (
+            f"There is a meaningful chance of grid pressure ({grid.strain_probability:.0%} strain probability), "
+            f"so questions about power rates and supply reliability are valid."
+        )
+    else:
+        grid_bullet = (
+            f"Grid-pressure risk appears low to moderate "
+            f"({grid.strain_probability:.0%} strain probability) under current assumptions."
+        )
+
+    noise_bullet = (
+        f"An estimated {soc.residential_population_in_noise_zone:,} people live in the modeled "
+        f"noise influence area — ask what mitigation measures are planned."
+    )
+
+    fiscal_bullet = (
+        f"Net 10-year fiscal estimate is ${eco.net_fiscal_impact_10yr_cad:,.0f} "
+        f"including ${eco.estimated_total_tax_revenue_10yr_cad:,.0f} in projected tax revenue."
+    )
+
+    permit_bullet = (
+        "Use annual compliance reporting on water, grid, tax, and jobs outcomes, "
+        "with enforcement triggers for missed commitments."
+        if env.water_score != "red"
+        else "Require enforceable water caps, audit obligations, and clawback clauses before permit approval."
+    )
+
+    return ImpactSummary(
+        resident_bullets=[water_bullet, grid_bullet, noise_bullet],
+        council_bullets=[
+            f"Policy recommendation currently trends to: {rec_label}.",
+            fiscal_bullet,
+            permit_bullet,
+        ],
+    )
+
+
+async def generate_impact_summary(assessment: ImpactAssessment) -> ImpactSummary:
+    """Generate AI-authored resident and council impact bullets for the given assessment.
+
+    Falls back to deterministic bullets if the LLM is unavailable.
+    """
+    settings = get_settings()
+    llm_backend = settings.llm_backend.strip().lower()
+
+    if llm_backend == "groq":
+        api_key = (settings.groq_api_key or "").strip()
+        llm_ready = bool(api_key) and not api_key.startswith("test-")
+    elif llm_backend == "bitnet":
+        bitnet_configured = bool(settings.bitnet_api_base.strip()) and bool(settings.bitnet_model.strip())
+        if bitnet_configured:
+            health = await check_bitnet_health_cached(settings)
+            llm_ready = bool(health.get("reachable", False))
+        else:
+            llm_ready = False
+    else:
+        llm_ready = False
+
+    if not llm_ready:
+        return _fallback_impact_summary(assessment)
+
+    try:
+        import railtracks as rt
+        from orchestrator.agents import get_impact_summary_agent
+        from orchestrator.validators import coerce_impact_summary
+
+        agent = get_impact_summary_agent()
+        compact = _memo_evidence_snapshot(assessment.evidence_pack or {})
+        policy = assessment.policy_decision
+        prompt = "\n".join(
+            [
+                "Generate impact summary bullets as JSON with keys: resident_bullets, council_bullets.",
+                "Return JSON only, no markdown.",
+                "Each list must have exactly 3 complete-sentence bullets.",
+                "Ground every claim in the evidence; do not invent numbers.",
+                f"Evidence summary: {compact}",
+                f"Policy decision: {policy.model_dump_json() if policy else 'none'}",
+                f"Proposal: {assessment.proposal.model_dump_json()}",
+            ]
+        )
+        raw = await rt.call(agent, prompt)
+        summary, parse_errors = coerce_impact_summary(raw)
+        if summary is not None and summary.resident_bullets and summary.council_bullets:
+            return ImpactSummary(
+                resident_bullets=summary.resident_bullets[:3],
+                council_bullets=summary.council_bullets[:3],
+            )
+        if parse_errors:
+            logger.warning("impact_summary_parse_failed errors=%s", parse_errors)
+        return _fallback_impact_summary(assessment)
+    except Exception:
+        logger.exception("impact_summary_agent_failed; using fallback")
+        return _fallback_impact_summary(assessment)
 
 
 async def assess_flow(
@@ -791,7 +731,6 @@ async def assess_flow(
 
     await _emit(progress_callback, "selecting_policy", 88)
     policy = select_policy(evidence_pack)
-    audience_insights_fallback = _build_audience_insights(environmental, economic, sociological, grid_strain, policy)
 
     if include_memo:
         await _emit(progress_callback, "railtracks_workflow", 92)
@@ -821,13 +760,6 @@ async def assess_flow(
             "memo_stage_timings_ms": {},
         }
 
-    memo_audience = _audience_insights_from_memo(memo) if memo is not None else None
-    use_memo_audience = bool(
-        railtracks_meta.get("railtacks_used", False)
-        and _audience_insights_are_rich(memo_audience)
-    )
-    audience_insights = memo_audience if use_memo_audience and memo_audience is not None else audience_insights_fallback
-
     return ImpactAssessment(
         proposal_id=f"proposal-{uuid4().hex[:12]}",
         timestamp=datetime.now(UTC),
@@ -840,7 +772,6 @@ async def assess_flow(
         grid_strain=grid_strain,
         site_fit=site_fit,
         overall_score=overall_score,
-        audience_insights=audience_insights,
         policy_decision=policy,
         memo=memo,
         negotiation_playbook=[CLAUSE_CATALOG[clause_id] for clause_id in policy.selected_clause_ids],

@@ -153,6 +153,12 @@ export default function Home() {
   const [memoJobId, setMemoJobId] = useState<string | null>(null);
   const [memoError, setMemoError] = useState<string | null>(null);
 
+  /* ── Impact summary state ────────────────────────────────── */
+  type ImpactSummary = { resident_bullets: string[]; council_bullets: string[] };
+  type SummaryState = "idle" | "loading" | "ready" | "failed";
+  const [impactSummary, setImpactSummary] = useState<ImpactSummary | null>(null);
+  const [summaryState, setSummaryState] = useState<SummaryState>("idle");
+
   const unlockedSteps = useMemo(() => {
     return { 1: true, 2: Boolean(assessment), 3: Boolean(assessment), 4: Boolean(assessment) } as const;
   }, [assessment]);
@@ -180,6 +186,8 @@ export default function Home() {
     setProgress(null);
     setError(null);
     setLastFilledParamKey(null);
+    setImpactSummary(null);
+    setSummaryState("idle");
 
     if (nextMode === "manual") {
       setUploadedFileName(null);
@@ -271,6 +279,8 @@ export default function Home() {
     setMemoState("idle");
     setMemoJobId(null);
     setMemoError(null);
+    setImpactSummary(null);
+    setSummaryState("idle");
     setProgress({ stage: "starting", pct: 0 });
 
     const submittedProposal: DataCentreProposal = { ...proposal };
@@ -316,6 +326,7 @@ export default function Home() {
             setAssessment(evt.result);
             setCurrentStep(2);
             void startMemoJob(submittedProposal);
+            void fetchImpactSummary(evt.result);
           }
         }
       }
@@ -323,6 +334,25 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Unknown assessment error.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  /* ── Impact summary fetch ────────────────────────────────── */
+  const fetchImpactSummary = async (completedAssessment: ImpactAssessment) => {
+    setSummaryState("loading");
+    setImpactSummary(null);
+    try {
+      const res = await fetch("/api/impact-summary", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(completedAssessment),
+      });
+      if (!res.ok) throw new Error(`impact_summary_${res.status}`);
+      const data = (await res.json()) as ImpactSummary;
+      setImpactSummary(data);
+      setSummaryState("ready");
+    } catch {
+      setSummaryState("failed");
     }
   };
 
@@ -385,20 +415,13 @@ export default function Home() {
           const fullFromJob = result.assessment;
           const mergedMemo = result.memo ?? fullFromJob?.memo ?? prev.memo;
           const mergedNarrative = result.report_narrative ?? fullFromJob?.report_narrative ?? prev.report_narrative;
-          const mergedAudienceInsights = fullFromJob?.audience_insights ?? prev.audience_insights;
           const mergedMethodology = {
             ...(prev.methodology ?? {}),
             ...((fullFromJob?.methodology as Record<string, unknown> | undefined) ?? {}),
             ...(result.methodology ?? {}),
             memo_deferred: false,
           };
-          return {
-            ...prev,
-            memo: mergedMemo,
-            report_narrative: mergedNarrative,
-            audience_insights: mergedAudienceInsights,
-            methodology: mergedMethodology,
-          };
+          return { ...prev, memo: mergedMemo, report_narrative: mergedNarrative, methodology: mergedMethodology };
         });
 
         setMemoState("ready");
@@ -942,16 +965,14 @@ export default function Home() {
                       <MeaningCard
                         title="What this means for residents"
                         icon={<UserRound className="size-4" />}
-                        points={assessment.audience_insights?.residents?.length
-                          ? assessment.audience_insights.residents
-                          : ["Resident-oriented insights are unavailable for this run."]}
+                        points={impactSummary?.resident_bullets ?? residentMeaning(assessment)}
+                        loading={summaryState === "loading"}
                       />
                       <MeaningCard
                         title="What this means for council"
                         icon={<Landmark className="size-4" />}
-                        points={assessment.audience_insights?.council?.length
-                          ? assessment.audience_insights.council
-                          : ["Council-oriented insights are unavailable for this run."]}
+                        points={impactSummary?.council_bullets ?? councilMeaning(assessment)}
+                        loading={summaryState === "loading"}
                       />
                     </div>
 
@@ -1231,12 +1252,13 @@ function ImpactDomainCard({
   );
 }
 
-function MeaningCard({ title, icon, points }: { title: string; icon: React.ReactNode; points: string[] }) {
+function MeaningCard({ title, icon, points, loading = false }: { title: string; icon: React.ReactNode; points: string[]; loading?: boolean }) {
   return (
     <div className="glass rounded-xl p-4">
       <div className="flex items-center gap-2">
         {icon}
         <h3 className="text-sm font-bold text-slate-700">{title}</h3>
+        {loading && <Loader2 className="ml-auto size-3.5 animate-spin text-slate-400" />}
       </div>
       <ul className="mt-3 space-y-2 pl-1">
         {points.map((point) => (
@@ -1354,6 +1376,34 @@ function gridImplication(grid: ImpactAssessment["grid_strain"]) {
   if (grid.strain_probability < 0.1) return "Limited expected system pressure under current assumptions.";
   if (grid.strain_probability < 0.25) return "Moderate pressure risk; utility coordination should be explicit.";
   return "High pressure risk; approvals should depend on enforceable grid mitigation commitments.";
+}
+
+function residentMeaning(a: ImpactAssessment): string[] {
+  const items: string[] = [];
+  if (a.environmental.pct_of_municipal_daily_supply >= 5) {
+    items.push("Local water use could become a key concern, especially in dry periods.");
+  } else {
+    items.push("Water-demand pressure appears manageable under current assumptions.");
+  }
+  if (a.grid_strain.strain_probability >= 0.2) {
+    items.push("There is a meaningful chance of grid pressure, so power-rate questions are valid.");
+  } else {
+    items.push("Grid-pressure risk appears low to moderate in this scenario.");
+  }
+  items.push(`Estimated people in the modeled noise influence area: ${a.sociological.residential_population_in_noise_zone.toLocaleString()}.`);
+  return items;
+}
+
+function councilMeaning(a: ImpactAssessment): string[] {
+  const items: string[] = [];
+  items.push(`Policy recommendation currently trends to: ${(a.policy_decision?.recommendation ?? "unknown").replaceAll("_", " ")}.`);
+  items.push(`Net 10-year fiscal estimate: $${a.economic.net_fiscal_impact_10yr_cad.toLocaleString()}.`);
+  if (a.environmental.water_score === "red") {
+    items.push("Use enforceable water caps, audit obligations, and clawback clauses before permit approval.");
+  } else {
+    items.push("Use annual reporting conditions to keep utility impacts transparent post-approval.");
+  }
+  return items;
 }
 
 function plainLanguageSummary(a: ImpactAssessment): string {

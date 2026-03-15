@@ -104,9 +104,9 @@ class OverallScore(BaseModel):
     summary_sentence: str
 
 
-class AudienceInsights(BaseModel):
-    residents: list[str] = Field(default_factory=list)
-    council: list[str] = Field(default_factory=list)
+class ImpactSummary(BaseModel):
+    resident_bullets: list[str]
+    council_bullets: list[str]
 
 
 class ImpactAssessment(BaseModel):
@@ -123,9 +123,9 @@ class ImpactAssessment(BaseModel):
     grid_strain: GridStrainPrediction
     site_fit: SiteFitPrediction | None = None
     overall_score: OverallScore
-    audience_insights: AudienceInsights = Field(default_factory=AudienceInsights)
     policy_decision: PolicyDecision | None = None
     memo: CouncilMemo | None = None
+    impact_summary: ImpactSummary | None = None
 
     negotiation_playbook: list[str] = Field(default_factory=list)
     report_narrative: str = ""

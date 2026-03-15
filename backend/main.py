@@ -82,7 +82,7 @@ async def health_llm() -> dict[str, Any]:
             "configured": bool(api_key),
             "reachable": None,
             "models": [settings.groq_model] if settings.groq_model.strip() else [],
-            "structured_output_note": "json_schema expected",
+            "structured_output_note": "json_schema preferred; auto-fallback to json_object if unsupported by model",
             "error": None,
         }
 
@@ -217,3 +217,23 @@ async def api_extract_proposal(file: UploadFile = File(...)):
 
     proposal, extraction_meta = await ingest_or_extract({"raw_text": text}, prefer_llm=llm_ready)
     return {**proposal.model_dump(mode="json"), "_extraction": extraction_meta}
+
+
+@app.post("/api/impact-summary")
+async def api_impact_summary(payload: dict) -> dict:
+    """Generate AI-authored resident and council impact bullet points for a completed assessment.
+
+    Accepts a full ImpactAssessment JSON payload and returns
+    ``{ resident_bullets: [...], council_bullets: [...] }``.
+    Falls back to deterministic bullets if the LLM is unavailable.
+    """
+    from models import ImpactAssessment as ImpactAssessmentModel
+    from orchestrator.railtracks_flow import generate_impact_summary
+
+    try:
+        assessment = ImpactAssessmentModel(**payload)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail={"error": "invalid_assessment_payload", "message": str(exc)}) from exc
+
+    summary = await generate_impact_summary(assessment)
+    return summary.model_dump(mode="json")
