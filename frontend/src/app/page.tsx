@@ -385,13 +385,20 @@ export default function Home() {
           const fullFromJob = result.assessment;
           const mergedMemo = result.memo ?? fullFromJob?.memo ?? prev.memo;
           const mergedNarrative = result.report_narrative ?? fullFromJob?.report_narrative ?? prev.report_narrative;
+          const mergedAudienceInsights = fullFromJob?.audience_insights ?? prev.audience_insights;
           const mergedMethodology = {
             ...(prev.methodology ?? {}),
             ...((fullFromJob?.methodology as Record<string, unknown> | undefined) ?? {}),
             ...(result.methodology ?? {}),
             memo_deferred: false,
           };
-          return { ...prev, memo: mergedMemo, report_narrative: mergedNarrative, methodology: mergedMethodology };
+          return {
+            ...prev,
+            memo: mergedMemo,
+            report_narrative: mergedNarrative,
+            audience_insights: mergedAudienceInsights,
+            methodology: mergedMethodology,
+          };
         });
 
         setMemoState("ready");
@@ -935,12 +942,16 @@ export default function Home() {
                       <MeaningCard
                         title="What this means for residents"
                         icon={<UserRound className="size-4" />}
-                        points={residentMeaning(assessment)}
+                        points={assessment.audience_insights?.residents?.length
+                          ? assessment.audience_insights.residents
+                          : ["Resident-oriented insights are unavailable for this run."]}
                       />
                       <MeaningCard
                         title="What this means for council"
                         icon={<Landmark className="size-4" />}
-                        points={councilMeaning(assessment)}
+                        points={assessment.audience_insights?.council?.length
+                          ? assessment.audience_insights.council
+                          : ["Council-oriented insights are unavailable for this run."]}
                       />
                     </div>
 
@@ -1343,34 +1354,6 @@ function gridImplication(grid: ImpactAssessment["grid_strain"]) {
   if (grid.strain_probability < 0.1) return "Limited expected system pressure under current assumptions.";
   if (grid.strain_probability < 0.25) return "Moderate pressure risk; utility coordination should be explicit.";
   return "High pressure risk; approvals should depend on enforceable grid mitigation commitments.";
-}
-
-function residentMeaning(a: ImpactAssessment): string[] {
-  const items: string[] = [];
-  if (a.environmental.pct_of_municipal_daily_supply >= 5) {
-    items.push("Local water use could become a key concern, especially in dry periods.");
-  } else {
-    items.push("Water-demand pressure appears manageable under current assumptions.");
-  }
-  if (a.grid_strain.strain_probability >= 0.2) {
-    items.push("There is a meaningful chance of grid pressure, so power-rate questions are valid.");
-  } else {
-    items.push("Grid-pressure risk appears low to moderate in this scenario.");
-  }
-  items.push(`Estimated people in the modeled noise influence area: ${a.sociological.residential_population_in_noise_zone.toLocaleString()}.`);
-  return items;
-}
-
-function councilMeaning(a: ImpactAssessment): string[] {
-  const items: string[] = [];
-  items.push(`Policy recommendation currently trends to: ${(a.policy_decision?.recommendation ?? "unknown").replaceAll("_", " ")}.`);
-  items.push(`Net 10-year fiscal estimate: $${a.economic.net_fiscal_impact_10yr_cad.toLocaleString()}.`);
-  if (a.environmental.water_score === "red") {
-    items.push("Use enforceable water caps, audit obligations, and clawback clauses before permit approval.");
-  } else {
-    items.push("Use annual reporting conditions to keep utility impacts transparent post-approval.");
-  }
-  return items;
 }
 
 function plainLanguageSummary(a: ImpactAssessment): string {

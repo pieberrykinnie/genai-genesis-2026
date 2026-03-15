@@ -104,6 +104,11 @@ class OverallScore(BaseModel):
     summary_sentence: str
 
 
+class AudienceInsights(BaseModel):
+    residents: list[str] = Field(default_factory=list)
+    council: list[str] = Field(default_factory=list)
+
+
 class ImpactAssessment(BaseModel):
     proposal_id: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -118,6 +123,7 @@ class ImpactAssessment(BaseModel):
     grid_strain: GridStrainPrediction
     site_fit: SiteFitPrediction | None = None
     overall_score: OverallScore
+    audience_insights: AudienceInsights = Field(default_factory=AudienceInsights)
     policy_decision: PolicyDecision | None = None
     memo: CouncilMemo | None = None
 

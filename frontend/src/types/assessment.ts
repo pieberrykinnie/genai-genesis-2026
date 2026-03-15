@@ -59,6 +59,10 @@ export interface ImpactAssessment {
     composite_rag: string;
     summary_sentence: string;
   };
+  audience_insights?: {
+    residents: string[];
+    council: string[];
+  };
   policy_decision?: {
     recommendation: "approve" | "approve_with_conditions" | "defer" | "reject";
     triggered_rules: string[];
