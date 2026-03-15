@@ -100,7 +100,9 @@ async def health_llm() -> dict[str, Any]:
 async def api_assess(payload: dict):
     # Runs the Railtracks flow and returns structured output
     try:
-        return await assess_flow(payload)
+        use_payload = dict(payload)
+        include_memo = not bool(use_payload.pop("defer_memo", False))
+        return await assess_flow(use_payload, include_memo=include_memo)
     except GeocodingUnavailableError as exc:
         raise HTTPException(
             status_code=503,
@@ -149,13 +151,16 @@ async def api_get_memo_job_result(job_id: str) -> dict[str, Any]:
 
 @app.post("/api/assess/stream")
 async def api_assess_stream(payload: dict):
+    use_payload = dict(payload)
+    include_memo = not bool(use_payload.pop("defer_memo", False))
+
     async def event_generator():
         queue: asyncio.Queue[dict] = asyncio.Queue()
 
         async def publish(event: dict) -> None:
             await queue.put(event)
 
-        task = asyncio.create_task(assess_flow(payload, progress_callback=publish))
+        task = asyncio.create_task(assess_flow(use_payload, progress_callback=publish, include_memo=include_memo))
 
         try:
             while True:
@@ -191,7 +196,7 @@ async def api_extract_proposal(file: UploadFile = File(...)):
         if tmp_path:
             os.unlink(tmp_path)
 
-    # Verify LLM is available before attempting extraction
+    # Check whether LLM extraction is available; fallback parser still runs if unavailable.
     current_settings = get_settings()
     llm_backend = current_settings.llm_backend.strip().lower()
     if llm_backend == "groq":
@@ -210,11 +215,5 @@ async def api_extract_proposal(file: UploadFile = File(...)):
     else:
         llm_ready = False
 
-    if not llm_ready:
-        raise HTTPException(
-            status_code=503,
-            detail={"error": "llm_unavailable", "message": "LLM backend is not configured or reachable."},
-        )
-
-    proposal = await ingest_or_extract({"raw_text": text})
-    return proposal.model_dump(mode="json")
+    proposal, extraction_meta = await ingest_or_extract({"raw_text": text}, prefer_llm=llm_ready)
+    return {**proposal.model_dump(mode="json"), "_extraction": extraction_meta}

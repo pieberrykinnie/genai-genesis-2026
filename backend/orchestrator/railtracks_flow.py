@@ -23,7 +23,6 @@ from data_sources import (
     get_load_context,
     get_statcan_store,
     get_annual_mean_temp,
-    fetch_site_fit_csd_context,
     fetch_site_fit_datacenter_context,
 )
 from llm.providers import check_bitnet_health_cached
@@ -469,6 +468,7 @@ async def _write_memo(
 async def assess_flow(
     user_payload: dict[str, Any],
     progress_callback: ProgressCallback | None = None,
+    include_memo: bool = True,
 ) -> ImpactAssessment:
     await _emit(progress_callback, "proposal_ingest", 10)
     proposal = ProposalInput(**user_payload)
@@ -613,19 +613,33 @@ async def assess_flow(
     await _emit(progress_callback, "selecting_policy", 88)
     policy = select_policy(evidence_pack)
 
-    await _emit(progress_callback, "railtracks_workflow", 92)
-    await _emit(progress_callback, "writing_memo", 94)
-    memo, railtracks_meta = await _write_memo(proposal, evidence_pack, policy, overall_score, environmental, economic, sociological)
-
-    report_narrative = "\n\n".join(
-        [
-            memo.executive_summary,
-            memo.environmental_section,
-            memo.economic_section,
-            memo.sociological_section,
-            memo.recommendation_section,
-        ]
-    )
+    if include_memo:
+        await _emit(progress_callback, "railtracks_workflow", 92)
+        await _emit(progress_callback, "writing_memo", 94)
+        memo, railtracks_meta = await _write_memo(
+            proposal, evidence_pack, policy, overall_score, environmental, economic, sociological
+        )
+        report_narrative = "\n\n".join(
+            [
+                memo.executive_summary,
+                memo.environmental_section,
+                memo.economic_section,
+                memo.sociological_section,
+                memo.recommendation_section,
+            ]
+        )
+    else:
+        memo = None
+        report_narrative = ""
+        railtracks_meta = {
+            "railtacks_used": False,
+            "railtacks_workflow": "council_decision_workflow_v1",
+            "railtacks_verification_passed": False,
+            "memo_fallback_reason": "memo_deferred",
+            "memo_llm_calls": 0,
+            "memo_elapsed_ms": 0,
+            "memo_stage_timings_ms": {},
+        }
 
     return ImpactAssessment(
         proposal_id=f"proposal-{uuid4().hex[:12]}",
@@ -657,5 +671,6 @@ async def assess_flow(
             "memo_llm_calls": railtracks_meta.get("memo_llm_calls", 0),
             "memo_elapsed_ms": railtracks_meta.get("memo_elapsed_ms", 0),
             "memo_stage_timings_ms": railtracks_meta.get("memo_stage_timings_ms", {}),
+            "memo_deferred": not include_memo,
         },
     )
