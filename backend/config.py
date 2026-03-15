@@ -26,8 +26,9 @@ class Settings(BaseSettings):
     llm_backend: str = "groq"
     llm_temperature: float | None = None
     llm_provider: str = "groq"
+    bitnet_api_key: str = "bitnet-local"
     bitnet_api_base: str = "http://127.0.0.1:8080/v1"
-    bitnet_model: str = "bitnet-b1.58-2B-4T"
+    bitnet_model: str = "HF1BitLLM/Llama3-8B-1.58-100B-tokens"
 
     data_dir: Path = BASE_DIR / "data"
     models_dir: Path = BASE_DIR / "models"
@@ -37,6 +38,11 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 12.0
     cache_ttl_seconds: int = 1800
     strict_data_mode: bool = True
+    memo_job_queue_maxsize: int = 32
+    memo_job_worker_count: int = 1
+    memo_job_timeout_seconds: float = 180.0
+    bitnet_health_cache_ttl_seconds: int = 30
+    memo_verifier_mode: str = "conditional"
 
 
 @lru_cache(maxsize=1)

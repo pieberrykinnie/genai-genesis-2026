@@ -8,7 +8,7 @@ import json
 logger = logging.getLogger(__name__)
 
 # Data Paths
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 DC_CSV_PATH = BASE_DIR / "data" / "canada_dc_osm.csv"
 CSD_JSON_PATH = BASE_DIR / "data" / "site_fit_csd_lookup.json"
 
