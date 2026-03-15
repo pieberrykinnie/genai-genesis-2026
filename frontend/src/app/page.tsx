@@ -995,9 +995,6 @@ export default function Home() {
                     {/* Verdict banner */}
                     <VerdictBanner assessment={assessment} />
 
-                    {/* Memo status */}
-                    <MemoStatusCard memoState={memoState} memoError={memoError} />
-
                     {/* Persona toggle */}
                     <div className="flex gap-2">
                       <Button
@@ -1027,28 +1024,6 @@ export default function Home() {
                       <ActionPhaseCard title="Post-approval" icon={<ShieldCheck className="size-4" />} items={phaseActions(assessment, persona).postApproval} />
                     </div>
 
-                    {/* Memo text */}
-                    <details className="glass rounded-xl p-4 text-sm">
-                      <summary className="cursor-pointer font-semibold text-slate-700 flex items-center gap-2">
-                        <ChevronDown className="size-4 transition-transform [[open]>&]:rotate-180" />
-                        Council memo &amp; policy details
-                      </summary>
-                      <div className="mt-3 space-y-3">
-                        <p className="text-xs leading-relaxed whitespace-pre-line text-slate-600">
-                          {assessment.memo?.recommendation_section || assessment.report_narrative || "Memo is not available yet."}
-                        </p>
-                        {assessment.negotiation_playbook.length > 0 && (
-                          <div className="rounded-lg border border-slate-200/50 bg-white/50 p-3">
-                            <p className="text-xs font-semibold text-slate-700">Negotiation playbook</p>
-                            <ul className="mt-2 space-y-1 pl-4 list-disc text-xs text-slate-600">
-                              {assessment.negotiation_playbook.map((item) => (
-                                <li key={item}>{item}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    </details>
                   </div>
                 )}
               </section>
