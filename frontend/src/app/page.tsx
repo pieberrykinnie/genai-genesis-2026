@@ -944,21 +944,6 @@ export default function Home() {
                       />
                     </div>
 
-                    {/* Methodology details */}
-                    <details className="glass rounded-xl p-4 text-sm">
-                      <summary className="cursor-pointer font-semibold text-slate-700 flex items-center gap-2">
-                        <ChevronDown className="size-4 transition-transform [[open]>&]:rotate-180" />
-                        Methodology & formulas
-                      </summary>
-                      <div className="mt-3 space-y-1.5 text-xs text-slate-500">
-                        <p>Composite: {assessment.overall_score.summary_sentence}</p>
-                        <p>Carbon: {evidenceText(assessment, "environmental", "carbon_formula")}</p>
-                        <p>Water: {evidenceText(assessment, "environmental", "water_formula")}</p>
-                        <p>Grid: {evidenceText(assessment, "environmental", "grid_formula")}</p>
-                        <p>Jobs: {evidenceText(assessment, "economic", "jobs_formula")}</p>
-                        <p>Fiscal: {evidenceText(assessment, "economic", "fiscal_formula")}</p>
-                      </div>
-                    </details>
                   </div>
                 )}
               </section>
@@ -1425,17 +1410,6 @@ function phaseActions(a: ImpactAssessment, persona: Persona) {
       "Include enforcement triggers for missed commitments.",
     ],
   };
-}
-
-function evidenceText(
-  assessment: ImpactAssessment,
-  section: "environmental" | "economic" | "sociological" | "grid_strain",
-  key: string,
-) {
-  const sectionRecord = assessment.evidence_pack?.[section];
-  if (!sectionRecord || typeof sectionRecord !== "object") return "unavailable";
-  const value = (sectionRecord as Record<string, unknown>)[key];
-  return value == null ? "unavailable" : String(value);
 }
 
 function memoStateLabel(state: MemoState) {
