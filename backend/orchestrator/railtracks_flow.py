@@ -11,6 +11,7 @@ from calculator.scoring import calc_composite_rag, score_economic, score_environ
 from calculator.sociological import calc_community_vulnerability_index, estimate_noise_radius_m, estimate_population_in_noise_zone
 from config import get_settings
 from data_sources import (
+    fetch_site_fit_csd_context,
     geocode_address,
     get_aqhi_baseline,
     get_capacity_and_surplus,
