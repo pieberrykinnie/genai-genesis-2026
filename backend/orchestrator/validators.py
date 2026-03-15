@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import ValidationError
 from pydantic import BaseModel
 
-from models import CouncilMemo, PolicyDecision, ProposalInput
+from models import CouncilMemo, ImpactSummary, PolicyDecision, ProposalInput
 
 
 NUMBER_PATTERN = re.compile(r"(?<![A-Za-z])[-+]?\d[\d,]*(?:\.\d+)?")
@@ -208,6 +208,58 @@ def coerce_verifier_result(value: Any) -> tuple[bool, list[str], list[str]]:
         heuristic_issues.append("verifier_unparseable_response")
 
     return heuristic_pass, heuristic_issues, parse_errors
+
+
+def _normalize_impact_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    resident = normalized.get("resident_bullets")
+    council = normalized.get("council_bullets")
+
+    if isinstance(resident, str):
+        resident = [resident]
+    if isinstance(council, str):
+        council = [council]
+
+    if not isinstance(resident, list):
+        resident = []
+    if not isinstance(council, list):
+        council = []
+
+    normalized["resident_bullets"] = [str(item).strip() for item in resident if str(item).strip()]
+    normalized["council_bullets"] = [str(item).strip() for item in council if str(item).strip()]
+    return normalized
+
+
+def coerce_impact_summary(value: Any) -> tuple[ImpactSummary | None, list[str]]:
+    if isinstance(value, ImpactSummary):
+        return value, []
+
+    if isinstance(value, BaseModel):
+        try:
+            return ImpactSummary.model_validate(value.model_dump(mode="python")), []
+        except ValidationError as exc:
+            return None, [f"impact_summary_schema_error: {exc.errors()[0]['msg']}"]
+
+    if isinstance(value, dict):
+        try:
+            normalized = _normalize_impact_summary_payload(value)
+            return ImpactSummary.model_validate(normalized), []
+        except ValidationError as exc:
+            msg = exc.errors()[0]["msg"] if exc.errors() else str(exc)
+            return None, [f"impact_summary_schema_error: {msg}"]
+
+    text = _to_text(value)
+    try:
+        payload = _extract_json_object(text)
+    except Exception as exc:
+        return None, [f"impact_summary_parse_error: {exc}"]
+
+    try:
+        normalized = _normalize_impact_summary_payload(payload)
+        return ImpactSummary.model_validate(normalized), []
+    except ValidationError as exc:
+        msg = exc.errors()[0]["msg"] if exc.errors() else str(exc)
+        return None, [f"impact_summary_schema_error: {msg}"]
 
 def validate_memo(memo: CouncilMemo, evidence_pack: dict, policy: PolicyDecision) -> tuple[bool, list[str]]:
     errors = []

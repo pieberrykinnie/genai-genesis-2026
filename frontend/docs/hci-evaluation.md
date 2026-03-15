@@ -1,4 +1,4 @@
-# HCI Evaluation: DataSite Council Dashboard
+# HCI Evaluation: ClearSite Dashboard
 
 ## Cognitive Walkthrough
 

@@ -6,7 +6,7 @@ City councils are being asked to approve data centre projects with major infrast
 
 ## Solution
 
-DataSite Impact Analyzer is a council-facing decision system that quantifies trade-offs using real Canadian datasets, deterministic formulas, and ML signals.
+ClearSite is a council-facing decision system that quantifies trade-offs using real Canadian datasets, deterministic formulas, and ML signals.
 
 It helps councils answer:
 - How much grid stress and rate pressure could this project create?
