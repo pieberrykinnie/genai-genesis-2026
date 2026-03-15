@@ -159,6 +159,22 @@ code, pre {
   border-radius: 1rem;
 }
 
+/* ── Map analysis effects ────────────────────────────────── */
+.map-shell .map-scan-ring {
+  animation: map-scan-rotate 7s linear infinite;
+  transform-origin: center;
+}
+
+.map-meter-fill {
+  transition: width 700ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.24);
+}
+
+@keyframes map-scan-rotate {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -140; }
+}
+
 /* ── Drop zone ───────────────────────────────────────────── */
 .drop-zone {
   position: relative;

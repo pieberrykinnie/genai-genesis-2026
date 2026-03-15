@@ -580,6 +580,12 @@ export default function Home() {
                         lng={assessment.location.lng}
                         apiKey={MAPTILER_KEY}
                         noiseRadiusM={assessment.sociological.estimated_noise_radius_m}
+                        waterSharePct={assessment.environmental.pct_of_municipal_daily_supply}
+                        gridStrainProb={assessment.grid_strain.strain_probability}
+                        populationInNoiseZone={assessment.sociological.residential_population_in_noise_zone}
+                        firstNationDistanceKm={assessment.sociological.nearest_first_nation_km}
+                        municipality={assessment.location.municipality}
+                        province={assessment.location.province}
                       />
                     </div>
                     <p className="text-sm text-slate-500">
