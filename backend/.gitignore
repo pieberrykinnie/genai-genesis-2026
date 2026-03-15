@@ -146,8 +146,10 @@ venv.bak/
 
 # Project datasets and artifacts
 data/*.csv
+!data/canada_dc_osm.csv
 data/*.zip
 data/*.json
+!data/site_fit_csd_lookup.json
 data/*.jsonl
 data/*.db
 data/fsa_monthly/
