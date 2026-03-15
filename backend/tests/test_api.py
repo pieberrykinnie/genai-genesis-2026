@@ -99,6 +99,79 @@ def test_assess_stream_has_complete(client: TestClient) -> None:
     assert '"stage": "complete"' in body
 
 
+def test_assess_stream_defer_memo_skips_memo_stages(client: TestClient) -> None:
+    payload = {**_sample_payload(), "defer_memo": True}
+    with client.stream("POST", "/api/assess/stream", json=payload) as resp:
+        assert resp.status_code == 200
+        body = "".join(resp.iter_text())
+    assert '"stage": "complete"' in body
+    assert '"stage": "railtracks_workflow"' not in body
+    assert '"stage": "writing_memo"' not in body
+    assert '"memo": null' in body
+
+
+def test_assess_defer_memo_returns_core_result(client: TestClient) -> None:
+    payload = {**_sample_payload(), "defer_memo": True}
+    r = client.post("/api/assess", json=payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["memo"] is None
+    assert body["report_narrative"] == ""
+    assert body["methodology"]["memo_deferred"] is True
+
+
+def test_extract_proposal_regex_fallback_without_llm(client: TestClient) -> None:
+    pdf_text = (
+        "Beacon AI Centers Indus Project. "
+        "Four data halls with a power requirement of 300MW each, totalling 1200MW. "
+        "Agreement with Langdon Waterworks Ltd. to receive 1,500 cubic meters per day. "
+        "Project location: Indus, Alberta, Canada."
+    )
+    with patch("main.extract_text_from_pdf", return_value=pdf_text):
+        r = client.post(
+            "/api/extract-proposal",
+            files={"file": ("proposal.pdf", b"%PDF-1.4 mock", "application/pdf")},
+        )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["it_load_mw"] == 1200.0
+    assert body["province"] == "AB"
+    assert body["address"]
+    assert "_extraction" in body
+    assert body["_extraction"]["mode"] == "regex_fallback"
+    assert "missing_fields" in body["_extraction"]
+
+
+def test_beacon_like_high_load_trends_higher_risk_than_baseline(client: TestClient) -> None:
+    baseline = _sample_payload()
+    beacon_like = {
+        **_sample_payload(),
+        "it_load_mw": 1200,
+        "pue": 1.7,
+        "wue": 2.2,
+        "capex_cad": 9000,
+        "construction_months": 48,
+    }
+
+    base_r = client.post("/api/assess", json=baseline)
+    high_r = client.post("/api/assess", json=beacon_like)
+    assert base_r.status_code == 200
+    assert high_r.status_code == 200
+
+    base_body = base_r.json()
+    high_body = high_r.json()
+
+    assert high_body["environmental"]["annual_carbon_tonnes"] > base_body["environmental"]["annual_carbon_tonnes"]
+    assert high_body["environmental"]["total_water_litres_per_day"] > base_body["environmental"]["total_water_litres_per_day"]
+    assert high_body["environmental"]["pct_of_municipal_daily_supply"] > base_body["environmental"]["pct_of_municipal_daily_supply"]
+
+    rank = {"approve": 0, "approve_with_conditions": 1, "defer": 2, "reject": 3}
+    base_rec = base_body.get("policy_decision", {}).get("recommendation", "approve")
+    high_rec = high_body.get("policy_decision", {}).get("recommendation", "approve")
+    assert rank[high_rec] >= rank[base_rec]
+
+
 def _wait_for_job_completion(client: TestClient, job_id: str, timeout_seconds: float = 10.0) -> dict:
     deadline = time.time() + timeout_seconds
     last_status_payload: dict | None = None
