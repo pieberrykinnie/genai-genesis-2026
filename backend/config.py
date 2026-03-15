@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 12.0
     cache_ttl_seconds: int = 1800
     strict_data_mode: bool = True
+    memo_job_queue_maxsize: int = 32
+    memo_job_worker_count: int = 1
+    memo_job_timeout_seconds: float = 180.0
 
 
 @lru_cache(maxsize=1)

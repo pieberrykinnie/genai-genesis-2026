@@ -118,6 +118,9 @@ LLM_PROVIDER=groq
 BITNET_API_KEY=bitnet-local
 BITNET_API_BASE=http://127.0.0.1:8080/v1
 BITNET_MODEL=1bitLLM/bitnet_b1_58-large
+MEMO_JOB_QUEUE_MAXSIZE=32
+MEMO_JOB_WORKER_COUNT=1
+MEMO_JOB_TIMEOUT_SECONDS=180
 STRICT_DATA_MODE=true
 STATCAN_CACHE_DIR=./data/statcan_cache
 MODEL_PATH=./models/grid_strain_model.pkl
@@ -140,6 +143,28 @@ Geocoding order is:
 - `GET /health/llm`
 - `POST /api/assess`
 - `POST /api/assess/stream` (SSE)
+- `POST /api/memo-jobs`
+- `GET /api/memo-jobs/{job_id}`
+- `GET /api/memo-jobs/{job_id}/result`
+
+## Async Memo Jobs
+
+Submit a memo generation job with the same proposal payload shape used by `/api/assess`:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/memo-jobs \
+	-H 'Content-Type: application/json' \
+	-d '{"address":"Municipal District of Greenview, Grande Prairie, Alberta","province":"AB","it_load_mw":200,"pue":1.5,"wue":1.9,"cooling_type":"evaporative","facility_type":"hyperscale","capex_cad":5000,"construction_months":36,"has_onsite_generation":true,"renewable_ppa":false}'
+```
+
+Then poll status and fetch result:
+
+```bash
+curl -s http://127.0.0.1:8000/api/memo-jobs/<job_id> | jq .
+curl -s http://127.0.0.1:8000/api/memo-jobs/<job_id>/result | jq .
+```
+
+When BitNet is unavailable, memo jobs degrade to deterministic fallback output and return `result.fallback_used=true`.
 
 ## Data + ML Scripts
 

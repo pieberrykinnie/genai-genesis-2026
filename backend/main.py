@@ -9,10 +9,16 @@ from fastapi.responses import StreamingResponse
 from config import get_settings
 from data_sources import GeocodingUnavailableError
 from llm.providers import check_bitnet_health
+from orchestrator.memo_jobs import MemoJobManager, QueueFullError
 from orchestrator.railtracks_flow import assess_flow
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
+memo_job_manager = MemoJobManager(
+    queue_maxsize=settings.memo_job_queue_maxsize,
+    worker_count=settings.memo_job_worker_count,
+    timeout_seconds=settings.memo_job_timeout_seconds,
+)
 
 origins = [o.strip() for o in settings.backend_cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -22,6 +28,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    await memo_job_manager.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    await memo_job_manager.stop()
 
 
 @app.get("/health")
@@ -86,6 +102,45 @@ async def api_assess(payload: dict):
             status_code=503,
             detail={"error": "geocoding_unavailable", "message": f"Unable to geocode address: {exc}"},
         ) from exc
+
+
+@app.post("/api/memo-jobs")
+async def api_submit_memo_job(payload: dict) -> dict[str, Any]:
+    try:
+        job_id = await memo_job_manager.submit(payload)
+    except QueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "memo_job_queue_full", "message": "Memo job queue is full, try again shortly."},
+        ) from exc
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/api/memo-jobs/{job_id}")
+async def api_get_memo_job_status(job_id: str) -> dict[str, Any]:
+    status = await memo_job_manager.get_status(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail={"error": "memo_job_not_found", "job_id": job_id})
+    return status
+
+
+@app.get("/api/memo-jobs/{job_id}/result")
+async def api_get_memo_job_result(job_id: str) -> dict[str, Any]:
+    job = await memo_job_manager.get_result(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail={"error": "memo_job_not_found", "job_id": job_id})
+
+    status = str(job.get("status") or "")
+    if status in {"queued", "running"}:
+        raise HTTPException(status_code=409, detail={"error": "memo_job_not_complete", "job_id": job_id, "status": status})
+    if status == "failed":
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "memo_job_failed", "job_id": job_id, "message": job.get("error") or "unknown_error"},
+        )
+
+    return {"job_id": job_id, "status": status, "result": job.get("result")}
 
 
 @app.post("/api/assess/stream")
