@@ -19,6 +19,8 @@ from data_sources import (
     get_indigenous_data,
     get_load_context,
     get_statcan_store,
+    get_annual_mean_temp,
+    fetch_site_fit_datacenter_context,
 )
 from ml.grid_strain.predict import predict_grid_strain
 from ml.site_fit.predict import predict_site_fit
@@ -76,25 +78,40 @@ async def _fetch_public_context(proposal: ProposalInput) -> tuple[dict[str, Any]
     carbon_task = get_carbon_intensity_g_per_kwh(province)
     aqhi_task = get_aqhi_baseline(province)
 
-    (geocoded, geocode_freshness), (carbon_intensity, carbon_freshness), (aqhi_label, aqhi_freshness) = await asyncio.gather(
+    (
+        (geocoded, geocode_freshness),
+        (carbon_intensity, carbon_freshness),
+        (aqhi_label, aqhi_freshness),
+    ) = await asyncio.gather(
         geocoded_task,
         carbon_task,
         aqhi_task,
     )
+    
+    lat = float(geocoded.get("lat") or 0.0)
+    lon = float(geocoded.get("lng") or 0.0)
+    
+    # We await this because it uses httpx under the hood. 
+    annual_mean_temp_c = await get_annual_mean_temp(lat, lon)
+    # This is a synchronous calculation relying on cached pandas arrays.
+    site_fit_datacenter_context = fetch_site_fit_datacenter_context(lat, lon)
 
     stats_store = get_statcan_store()
     csd_id = str(geocoded.get("census_subdivision_id") or "")
+    
+    # 🚀 NEW: Retrieve exact area and business count synced identically to training regime
+    csd_features = fetch_site_fit_csd_context(csd_id)
+    area_sq_km = csd_features.get("area_km2", 250.0)
+    business_count = csd_features.get("business_count", 500.0)
+
     demographics, demographics_freshness = stats_store.get_csd_demographics(csd_id, province)
-    total_population = int(float(demographics.get("total_population", 150000.0)))
+    total_population = int(float(demographics.get("total_population", csd_features.get("population", 150000.0))))
     municipal_daily_supply_litres, water_freshness = stats_store.get_municipal_supply_l_day(csd_id, total_population)
 
     capacity_mw, surplus_pct, grid_freshness = get_capacity_and_surplus(province)
     load_context, load_freshness = get_load_context(province)
     drought_level, drought_freshness = get_drought_level(province)
-    indigenous_context, indigenous_freshness = get_indigenous_data().nearest_reserve(
-        float(geocoded.get("lat") or 0.0),
-        float(geocoded.get("lng") or 0.0),
-    )
+    indigenous_context, indigenous_freshness = get_indigenous_data().nearest_reserve(lat, lon)
 
     municipality = geocoded.get("municipality") or proposal.city or (proposal.address or "Unknown location").split(",")[0].strip()
     freshness = {
@@ -124,7 +141,11 @@ async def _fetch_public_context(proposal: ProposalInput) -> tuple[dict[str, Any]
             "load_context": load_context,
             "drought_level": drought_level,
             "indigenous_context": indigenous_context,
-            "area_sq_km": 250.0,
+            "area_sq_km": area_sq_km,
+            "business_count": business_count,
+            "annual_mean_temp_c": annual_mean_temp_c,
+            "distance_to_nearest_dc_km": site_fit_datacenter_context.get("distance_to_nearest_dc_km", 35.0),
+            "dc_count_within_100km": site_fit_datacenter_context.get("dc_count_within_100km", 1.0),
         },
         freshness,
     )

@@ -21,6 +21,12 @@ def extract_site_features(proposal, public_context):
     population = float(public_context.get("total_population") or 150000.0)
     area_sq_km = float(public_context.get("area_sq_km") or 250.0)
     population_density = population / max(area_sq_km, 1.0)
+    
+    business_count = float(public_context.get("business_count") or 500.0)
+    business_density = business_count / max(area_sq_km, 1.0)
+    
+    annual_mean_temp_c = float(public_context.get("annual_mean_temp_c") or 5.0)
+
     nearest_dc_km = float(public_context.get("distance_to_nearest_dc_km") or (35.0 if province in {"ON", "AB", "BC", "QC"} else 80.0))
     dc_count_within_100km = float(public_context.get("dc_count_within_100km") or (4.0 if province in {"ON", "AB"} else 1.0))
     community_vulnerability_index = float(public_context.get("community_vulnerability_index") or 35.0)
@@ -36,7 +42,9 @@ def extract_site_features(proposal, public_context):
         "water_stress_score": round(water_stress_score, 4),
         "drought_score": drought_score,
         "aqhi_value": aqhi_value,
+        "annual_mean_temp_c": round(annual_mean_temp_c, 2),
         "population_density": round(population_density, 4),
+        "business_density": round(business_density, 4),
         "distance_to_nearest_dc_km": nearest_dc_km,
         "dc_count_within_100km": dc_count_within_100km,
         "community_vulnerability_index": community_vulnerability_index,
